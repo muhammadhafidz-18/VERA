@@ -70,6 +70,10 @@ function Icon({ name, size = 16, style }) {
       return <svg {...common}><path d="M3 3v5h5" /><path d="M3.05 13A9 9 0 106 5.3L3 8" /><polyline points="12 7 12 12 15 15" /></svg>;
     case "send":
       return <svg {...common}><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>;
+    case "eye":
+      return <svg {...common}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>;
+    case "eye-off":
+      return <svg {...common}><path d="M17.94 17.94A10.94 10.94 0 0112 20c-7 0-11-8-11-8a20.3 20.3 0 015.06-6.06M9.9 4.24A10.94 10.94 0 0112 4c7 0 11 8 11 8a20.29 20.29 0 01-3.22 4.5" /><path d="M14.12 14.12a3 3 0 11-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>;
     default:
       return null;
   }

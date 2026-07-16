@@ -2,12 +2,12 @@
 "use client";
 import { useState } from "react";
 import LoginScreen from "./LoginScreen";
-import ResetPinForm from "./ResetPinForm";
+import ForgotPasswordForm from "./ForgotPasswordForm";
 
 export default function AuthGate({ onLogin }) {
-  const [screen, setScreen] = useState("login"); // "login" | "reset"
-  if (screen === "reset") {
-    return <ResetPinForm onBack={() => setScreen("login")} />;
+  const [screen, setScreen] = useState("login"); // "login" | "forgot-password"
+  if (screen === "forgot-password") {
+    return <ForgotPasswordForm onBack={() => setScreen("login")} />;
   }
-  return <LoginScreen onLogin={onLogin} onForgotPin={() => setScreen("reset")} />;
+  return <LoginScreen onLogin={onLogin} onForgotPassword={() => setScreen("forgot-password")} />;
 }

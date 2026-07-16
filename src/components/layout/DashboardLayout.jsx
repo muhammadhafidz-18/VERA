@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 import { loadSession, clearSession } from "@/lib/session";
+import { signOut } from "@/lib/supabase/auth";
 
 export default function DashboardLayout({ children }) {
   const router = useRouter();
@@ -19,8 +20,9 @@ export default function DashboardLayout({ children }) {
     setChecked(true);
   }, [router]);
 
-  function handleLogout() {
+  async function handleLogout() {
     clearSession();
+    await signOut();
     router.replace("/login");
   }
 
