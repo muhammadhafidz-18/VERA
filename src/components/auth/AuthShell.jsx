@@ -15,11 +15,11 @@ export default function AuthShell({ children }) {
               </div>
               <div className="login-brand-title">V.E.R.A</div>
               <div className="login-brand-desc">
-                Virtual Employee Resource Assistant — one place to chat, schedule meetings, manage tasks, and get
+                Virtual Employee Resource Assistant — One command to simplify your daily routine and get
                 things done.
               </div>
             </div>
-            <div className="login-brand-footer">Sign in with your email and PIN. Menu access adjusts automatically to your role.</div>
+            <div className="login-brand-footer">Sign in with your email and Password. Menu access adjusts automatically to your role.</div>
           </div>
         </div>
         <div className="login-form-panel">{children}</div>

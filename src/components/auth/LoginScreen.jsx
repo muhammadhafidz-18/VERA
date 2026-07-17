@@ -5,6 +5,7 @@ import Icon from "@/lib/Icon";
 import AuthShell from "./AuthShell";
 import { employees } from "@/lib/vera/store";
 import { signInWithPassword } from "@/lib/supabase/auth";
+import { fetchEmployeeByAuthUserId, fetchEmployeeByEmail } from "@/lib/supabase/employees";
 
 export default function LoginScreen({ onLogin, onForgotPassword }) {
   const [email, setEmail] = useState("");
@@ -36,18 +37,23 @@ export default function LoginScreen({ onLogin, onForgotPassword }) {
       return;
     }
 
-    // Bridge: the employees table isn't wired to Supabase yet (Fase 4), so
-    // for now we match the authenticated Supabase user by email against the
-    // in-memory employee directory to populate the profile shown in the app.
-    // Once Fase 4 lands this should look up `employees` by `auth_user_id`
-    // instead.
-    const profile = employees.find((emp) => emp.email.toLowerCase() === trimmedEmail);
+    // Look up the profile from the real Supabase `employees` table first
+    // (source of truth once data has been seeded via seed-database.mjs or
+    // added manually). Falls back to the in-memory directory for employees
+    // that haven't been migrated yet.
+    let profile = await fetchEmployeeByAuthUserId(authUser.id);
+    if (!profile) profile = await fetchEmployeeByEmail(trimmedEmail);
+    if (!profile) {
+      const local = employees.find((emp) => emp.email.toLowerCase() === trimmedEmail);
+      if (local) profile = { ...local, authUserId: authUser.id };
+    }
+
     if (!profile) {
       setError("Signed in, but no matching employee profile was found. Contact an admin.");
       return;
     }
 
-    onLogin({ ...profile, authUserId: authUser.id });
+    onLogin({ ...profile, authUserId: profile.authUserId || authUser.id });
   };
 
   return (
