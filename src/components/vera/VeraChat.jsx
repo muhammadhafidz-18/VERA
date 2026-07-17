@@ -3,10 +3,10 @@
 import { useState, useRef, useEffect } from "react";
 import Icon from "@/lib/Icon";
 import { speak, warmUpVoices } from "@/lib/voice";
-import { clearSession } from "@/lib/session";
+import { clearSession, loadSession } from "@/lib/session";
 import {
   VERA_CHAT_HISTORY_KEY,
-  VERA_DEFAULT_GREETING,
+  getVeraGreeting,
   loadVeraChatHistory,
   sanitizeVeraReply,
   VERA_RAW_DATA_PATTERN,
@@ -18,7 +18,8 @@ import {
 } from "@/lib/vera/chatHelpers";
 
 export default function VeraChat({ onLogout }) {
-  const [messages, setMessages] = useState(() => loadVeraChatHistory() || [{ role: "assistant", text: VERA_DEFAULT_GREETING }]);
+  const greeting = getVeraGreeting(loadSession()?.user?.name);
+  const [messages, setMessages] = useState(() => loadVeraChatHistory() || [{ role: "assistant", text: greeting }]);
   const [input, setInput] = useState("");
   const [recording, setRecording] = useState(false);
   const [thinking, setThinking] = useState(false);
@@ -50,16 +51,16 @@ export default function VeraChat({ onLogout }) {
   }, [messages, thinking]);
 
   const handleResetChat = () => {
-    const fresh = [{ role: "assistant", text: VERA_DEFAULT_GREETING }];
+    const fresh = [{ role: "assistant", text: greeting }];
     setMessages(fresh);
     try {
       sessionStorage.setItem(VERA_CHAT_HISTORY_KEY, JSON.stringify(fresh));
     } catch (err) {}
-    speak(VERA_DEFAULT_GREETING);
+    speak(greeting);
   };
 
   const resetChatSilently = () => {
-    const fresh = [{ role: "assistant", text: VERA_DEFAULT_GREETING }];
+    const fresh = [{ role: "assistant", text: greeting }];
     setMessages(fresh);
     try {
       sessionStorage.setItem(VERA_CHAT_HISTORY_KEY, JSON.stringify(fresh));
@@ -89,7 +90,7 @@ export default function VeraChat({ onLogout }) {
       }
       if (VERA_RESET_CONFIRM_QUESTION_PATTERN.test(lastMsg.text)) {
         resetChatSilently();
-        if (viaVoice) speak(VERA_DEFAULT_GREETING);
+        if (viaVoice) speak(greeting);
         setInput("");
         return;
       }

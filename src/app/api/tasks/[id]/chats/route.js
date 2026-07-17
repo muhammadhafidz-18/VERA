@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { addTaskChat, CURRENT_USER_ID } from "@/lib/vera/store";
+import { addTaskChat } from "@/lib/supabase/tasks";
 import { callClaude } from "@/lib/vera/claude";
 import { TASK_SYSTEM_PROMPT_MODERATION } from "@/lib/vera/taskPrompts";
 
@@ -21,7 +21,7 @@ export async function POST(request, { params }) {
     }
   }
 
-  const result = addTaskChat(id, CURRENT_USER_ID, finalMessage, attachment);
+  const result = await addTaskChat(id, finalMessage, attachment);
   if (!result.success) return NextResponse.json({ error: result.error }, { status: 404 });
   return NextResponse.json({ ...result, moderated });
 }

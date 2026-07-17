@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { VERA_TOOLS } from "@/lib/vera/tools";
 import { buildVeraSystemPrompt } from "@/lib/vera/systemPrompt";
 import { executeVeraTool } from "@/lib/vera/executeTool";
-import { getDivisions, getBranches } from "@/lib/vera/store";
+import { getDivisions, getBranches } from "@/lib/supabase/directory";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-4-6";
@@ -70,8 +70,8 @@ export async function POST(request) {
       return NextResponse.json({ error: "Missing conversation history." }, { status: 400 });
     }
 
-    const divisions = getDivisions();
-    const branches = getBranches();
+    const divisions = await getDivisions();
+    const branches = await getBranches();
     const systemPrompt = buildVeraSystemPrompt(divisions, branches);
 
     const lastUserMsg = [...history].reverse().find((m) => m.role === "user");

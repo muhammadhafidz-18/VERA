@@ -7,7 +7,7 @@ import ConfirmModal from "@/components/shared/ConfirmModal";
 import TaskEditModal from "./TaskEditModal";
 import TaskRefinePreviewModal from "./TaskRefinePreviewModal";
 import TaskAiHistoryModal from "./TaskAiHistoryModal";
-import { TASK_STATUS_STYLES, TASK_PRIORITY_STYLES, CURRENT_USER_ID, taskUserById, taskTimeAgo, formatTaskDate } from "@/lib/vera/taskUiHelpers";
+import { TASK_STATUS_STYLES, TASK_PRIORITY_STYLES, taskUserById, taskTimeAgo, formatTaskDate } from "@/lib/vera/taskUiHelpers";
 
 async function refineText(text) {
   const res = await fetch("/api/ai/refine", {
@@ -29,7 +29,7 @@ async function moderateText(text) {
   return res.json();
 }
 
-export default function TaskDetailView({ task, onBack, onUpdateTask, onEditTask, onChangeStatus, onSendChat, onDeleteTask, employees }) {
+export default function TaskDetailView({ task, onBack, onUpdateTask, onEditTask, onChangeStatus, onSendChat, onDeleteTask, employees, currentUserId }) {
   const [description, setDescription] = useState(task.description);
   const [refiningDesc, setRefiningDesc] = useState(false);
   const [descError, setDescError] = useState(null);
@@ -365,7 +365,7 @@ export default function TaskDetailView({ task, onBack, onUpdateTask, onEditTask,
                 );
               }
               const sender = taskUserById(employees, chat.senderId);
-              const isMine = chat.senderId === CURRENT_USER_ID;
+              const isMine = chat.senderId === currentUserId;
               return (
                 <div key={chat.id} className={`task-chat-row${isMine ? " mine" : ""}`}>
                   <TaskAvatar name={sender.name} size={22} />
@@ -445,6 +445,7 @@ export default function TaskDetailView({ task, onBack, onUpdateTask, onEditTask,
         <TaskEditModal
           task={task}
           employees={employees}
+          currentUserId={currentUserId}
           onClose={() => setShowEditModal(false)}
           onSave={(patch) => {
             onEditTask(patch);

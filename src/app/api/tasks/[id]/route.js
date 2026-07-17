@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { getTaskById, updateTask, deleteTask, pushTaskAudit } from "@/lib/vera/store";
+import { getTaskById, updateTask, deleteTask, pushTaskAudit } from "@/lib/supabase/tasks";
 
 export async function GET(request, { params }) {
   const { id } = await params;
-  const task = getTaskById(id);
+  const task = await getTaskById(id);
   if (!task) return NextResponse.json({ error: "Task not found." }, { status: 404 });
   return NextResponse.json({ task });
 }
@@ -11,7 +11,7 @@ export async function GET(request, { params }) {
 export async function PUT(request, { params }) {
   const { id } = await params;
   const body = await request.json();
-  const task = getTaskById(id);
+  const task = await getTaskById(id);
   if (!task) return NextResponse.json({ error: "Task not found." }, { status: 404 });
 
   const changes = [];
@@ -21,14 +21,19 @@ export async function PUT(request, { params }) {
   if (body.assignedTo !== undefined && body.assignedTo !== task.assignedTo) changes.push(`reassigned`);
   if (body.description !== undefined && body.description !== task.description) changes.push(`description updated`);
 
-  const result = updateTask(id, body);
-  if (changes.length) pushTaskAudit(id, "edited", changes.join("; "));
+  const result = await updateTask(id, body);
+  if (changes.length) await pushTaskAudit(id, "edited", changes.join("; "));
+
+  if (result.success) {
+    const refreshed = await getTaskById(id);
+    return NextResponse.json({ success: true, task: refreshed });
+  }
   return NextResponse.json(result);
 }
 
 export async function DELETE(request, { params }) {
   const { id } = await params;
-  const result = deleteTask(id);
+  const result = await deleteTask(id);
   if (!result.success) return NextResponse.json({ error: "Task not found." }, { status: 404 });
   return NextResponse.json(result);
 }

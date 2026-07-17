@@ -10,6 +10,7 @@ import { signOut } from "@/lib/supabase/auth";
 export default function DashboardLayout({ children }) {
   const router = useRouter();
   const [checked, setChecked] = useState(false);
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
     const session = loadSession();
@@ -17,6 +18,7 @@ export default function DashboardLayout({ children }) {
       router.replace("/login");
       return;
     }
+    setUser(session.user || null);
     setChecked(true);
   }, [router]);
 
@@ -32,7 +34,7 @@ export default function DashboardLayout({ children }) {
     <div className="app-shell">
       <Sidebar />
       <div className="main">
-        <Topbar onLogout={handleLogout} />
+        <Topbar onLogout={handleLogout} user={user} />
         <div className="content">{children}</div>
       </div>
     </div>

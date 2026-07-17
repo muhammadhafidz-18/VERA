@@ -2,10 +2,10 @@
 "use client";
 import { useState } from "react";
 import Icon from "@/lib/Icon";
-import { TASK_PRIORITY_STYLES, CURRENT_USER_ID } from "@/lib/vera/taskUiHelpers";
+import { TASK_PRIORITY_STYLES } from "@/lib/vera/taskUiHelpers";
 
-export default function TaskCreateModal({ onClose, onCreate, employees }) {
-  const assignableUsers = employees.filter((e) => e.id !== CURRENT_USER_ID);
+export default function TaskCreateModal({ onClose, onCreate, employees, currentUserId }) {
+  const assignableUsers = employees.filter((e) => e.id !== currentUserId);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [assignedTo, setAssignedTo] = useState(assignableUsers[0]?.id || "");

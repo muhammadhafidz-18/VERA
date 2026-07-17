@@ -1,24 +1,24 @@
 import { NextResponse } from "next/server";
-import { getDivisions, addDivision, deleteDivision, renameDivision } from "@/lib/vera/store";
+import { getDivisions, addDivision, deleteDivision, renameDivision } from "@/lib/supabase/directory";
 
 export async function GET() {
-  return NextResponse.json({ divisions: getDivisions() });
+  return NextResponse.json({ divisions: await getDivisions() });
 }
 export async function POST(request) {
   const { name } = await request.json();
   if (!name?.trim()) return NextResponse.json({ error: "Division name is required." }, { status: 400 });
-  const result = addDivision(name.trim());
+  const result = await addDivision(name.trim());
   if (!result.success) return NextResponse.json({ error: result.error }, { status: 400 });
   return NextResponse.json(result);
 }
 export async function PUT(request) {
   const { oldName, newName } = await request.json();
-  const result = renameDivision(oldName, newName.trim());
+  const result = await renameDivision(oldName, newName.trim());
   if (!result.success) return NextResponse.json({ error: result.error }, { status: 400 });
   return NextResponse.json(result);
 }
 export async function DELETE(request) {
   const { name } = await request.json();
-  const result = deleteDivision(name);
+  const result = await deleteDivision(name);
   return NextResponse.json(result);
 }

@@ -7,12 +7,14 @@ import TaskIndex from "@/components/tasks/TaskIndex";
 import TaskDetailView from "@/components/tasks/TaskDetailView";
 import TaskCreateModal from "@/components/tasks/TaskCreateModal";
 import { taskTimeAgo } from "@/lib/vera/taskUiHelpers";
+import { loadSession } from "@/lib/session";
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [currentUserId] = useState(() => loadSession()?.user?.id || null);
 
   const [view, setView] = useState("index");
   const [selectedTaskId, setSelectedTaskId] = useState(null);
@@ -193,6 +195,7 @@ export default function TasksPage() {
           <TaskDetailView
             task={selectedTask}
             employees={employees}
+            currentUserId={currentUserId}
             onBack={() => setView("index")}
             onUpdateTask={(patch) => updateTask(selectedTask.id, patch)}
             onEditTask={(patch) => handleEditTask(selectedTask, patch)}
@@ -202,7 +205,9 @@ export default function TasksPage() {
           />
         )}
 
-        {showCreateModal && <TaskCreateModal onClose={() => setShowCreateModal(false)} onCreate={handleCreateTask} employees={employees} />}
+        {showCreateModal && (
+          <TaskCreateModal onClose={() => setShowCreateModal(false)} onCreate={handleCreateTask} employees={employees} currentUserId={currentUserId} />
+        )}
       </div>
     </DashboardLayout>
   );

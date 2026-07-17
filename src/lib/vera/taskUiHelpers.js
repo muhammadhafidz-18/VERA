@@ -12,8 +12,6 @@ export const TASK_PRIORITY_STYLES = {
   high: { label: "High", badge: "red" },
 };
 
-export const CURRENT_USER_ID = "EMP-0001";
-
 export function taskUserById(employees, id) {
   return employees.find((e) => e.id === id) || { id, name: "Unknown", division: "-" };
 }

@@ -1,17 +1,16 @@
 // src/lib/vera/executeTool.js
+import { getMeetings, createMeeting } from "@/lib/supabase/meetings";
+import { createTask } from "@/lib/supabase/tasks";
 import {
   getEmployees,
   createEmployee,
-  getMeetings,
-  createMeeting,
-  createTask,
   addDivision,
   addBranch,
-} from "./store";
+} from "@/lib/supabase/directory";
 
 export async function executeVeraTool(name, input) {
   if (name === "get_employees") {
-    const results = getEmployees(input);
+    const results = await getEmployees(input);
     return {
       total_matches: results.length,
       results: results.slice(0, 25).map((e) => ({
@@ -24,11 +23,11 @@ export async function executeVeraTool(name, input) {
     if (!input.name || !input.email || !input.division || !input.branch) {
       return { success: false, error: "Missing required fields (name, email, division, branch)." };
     }
-    return createEmployee(input);
+    return await createEmployee(input);
   }
 
   if (name === "get_meetings") {
-    const results = getMeetings(input);
+    const results = await getMeetings(input);
     return {
       total_matches: results.length,
       results: results.slice(0, 25).map((m) => ({ id: m.id, title: m.title, date: m.date, time: m.time, location: m.location })),
@@ -39,24 +38,24 @@ export async function executeVeraTool(name, input) {
     if (!input.title || !input.date || !input.time) {
       return { success: false, error: "Missing required fields (title, date, time)." };
     }
-    return createMeeting(input);
+    return await createMeeting(input);
   }
 
   if (name === "create_task") {
     if (!input.title || !input.assignedTo) {
       return { success: false, error: "Missing required fields (title, assignedTo)." };
     }
-    return createTask(input);
+    return await createTask(input);
   }
 
   if (name === "add_division") {
     if (!input.name?.trim()) return { success: false, error: "Division name is required." };
-    return addDivision(input.name.trim());
+    return await addDivision(input.name.trim());
   }
 
   if (name === "add_branch") {
     if (!input.name?.trim()) return { success: false, error: "Branch name is required." };
-    return addBranch(input.name.trim());
+    return await addBranch(input.name.trim());
   }
 
   if (name === "logout") {

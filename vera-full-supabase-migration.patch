@@ -1,0 +1,3040 @@
+diff --git a/SETUP_SUPABASE_AUTH.md b/SETUP_SUPABASE_AUTH.md
+new file mode 100644
+index 0000000..5c0e2cb
+--- /dev/null
++++ b/SETUP_SUPABASE_AUTH.md
+@@ -0,0 +1,81 @@
++# Setup Login Supabase Auth (V.E.R.A)
++
++Login sekarang pakai **Supabase Auth beneran** (email + password), menggantikan
++validasi PIN dummy yang sebelumnya cuma cek array in-memory.
++
++## 1. Isi environment variable
++
++```bash
++cp .env.local.example .env.local
++```
++
++Buka Supabase Dashboard project kamu → **Settings > API**, lalu isi:
++
++- `NEXT_PUBLIC_SUPABASE_URL` — Project URL
++- `NEXT_PUBLIC_SUPABASE_ANON_KEY` — anon public key
++- `SUPABASE_SERVICE_ROLE_KEY` — service role key (⚠️ rahasia, jangan pernah
++  commit atau expose ke browser — cuma dipakai script seed di bawah, jalan
++  di local/CI, tidak pernah dibundle ke app)
++
++## 2. Buat akun untuk 15 employee yang sudah ada
++
++Karena employee directory masih in-memory (belum di Fase 4 — sambung ke tabel
++`employees` beneran), buat akun Supabase Auth-nya lewat script sekali-jalan:
++
++```bash
++npm run seed:auth
++```
++
++Ini akan bikin 15 akun (email dari `src/lib/vera/store.js`) dengan password
++sementara `Vaulthos2026!` (bisa diganti: `npm run seed:auth -- --password="LainNya123"`).
++Kalau email sudah ada, otomatis di-skip, aman dijalankan berkali-kali.
++
++Setelah itu tiap employee bisa login pakai email mereka + password sementara,
++lalu ganti sendiri lewat **Forgot your password?** di halaman login.
++
++## 3. Redirect URL untuk reset password
++
++Di Supabase Dashboard → **Authentication > URL Configuration**, tambahkan ke
++**Redirect URLs**:
++
++- `http://localhost:3000/reset-password` (dev)
++- `https://<domain-production-kamu>/reset-password` (setelah deploy ke Vercel)
++
++Tanpa ini, link reset password dari email akan ditolak Supabase.
++
++## 4. Jalankan
++
++```bash
++npm install
++npm run dev
++```
++
++Buka `http://localhost:3000/login`, login pakai salah satu email di atas +
++password sementara.
++
++## Apa yang berubah
++
++| Sebelum | Sekarang |
++|---|---|
++| PIN 6 digit, dicek ke array in-memory | Email + password, dicek ke Supabase Auth (`signInWithPassword`) |
++| "Reset PIN" set password baru langsung tanpa verifikasi | "Forgot password" kirim email link reset asli (`resetPasswordForEmail`) |
++| Sesi cuma `sessionStorage` (hilang tiap tab baru / restart browser) | Sesi Supabase via cookie (`@supabase/ssr`), di-refresh otomatis lewat `middleware.js`, route dashboard otomatis redirect ke `/login` kalau belum login |
++| Logout cuma hapus `sessionStorage` | Logout beneran manggil `supabase.auth.signOut()` |
++
++## Yang BELUM dikerjakan (di luar scope ini, lanjut nanti)
++
++- **Fase 4**: tabel `employees` di Supabase belum dipakai — app masih baca
++  dari `src/lib/vera/store.js` (in-memory). Setelah login, profil employee
++  dicari lewat **pencocokan email** ke array in-memory itu (lihat komentar
++  "Bridge" di `LoginScreen.jsx`). Setelah Fase 4 selesai, ini harus diganti
++  jadi query `employees` by `auth_user_id`.
++- `CURRENT_USER_ID` masih hardcoded ke `"EMP-0001"` di beberapa tempat
++  (`taskUiHelpers.js`, `store.js`) — belum otomatis ikut user yang login.
++  Ini juga nunggu Fase 4.
++- Belum ada UI untuk admin bikin akun baru (signup masih dummy link). Untuk
++  sekarang, akun baru dibuat manual lewat Supabase Dashboard atau nambah ke
++  `scripts/seed-auth-users.mjs`.
++- **Row Level Security (RLS)** di tabel `employees`/`tasks`/dst masih belum
++  di-enable (Fase 5 di `vera_schema.sql`) — tidak berpengaruh ke login ini
++  karena Auth adalah sistem terpisah dari tabel-tabel itu, tapi wajib
++  dibereskan sebelum Fase 4 jalan ke production.
+diff --git a/middleware.js b/middleware.js
+new file mode 100644
+index 0000000..894de9f
+--- /dev/null
++++ b/middleware.js
+@@ -0,0 +1,17 @@
++// middleware.js
++import { updateSession } from "@/lib/supabase/middleware";
++
++export async function middleware(request) {
++  return updateSession(request);
++}
++
++export const config = {
++  matcher: [
++    /*
++     * Match all request paths except:
++     * - _next/static, _next/image (static assets)
++     * - favicon.ico, public files (images, videos)
++     */
++    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|mp4|ico|webp)$).*)",
++  ],
++};
+diff --git a/package-lock.json b/package-lock.json
+index 7998d9f..a9f8212 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -16,6 +16,7 @@
+       },
+       "devDependencies": {
+         "@tailwindcss/postcss": "^4",
++        "dotenv": "^17.4.2",
+         "eslint": "^9",
+         "eslint-config-next": "16.2.10",
+         "tailwindcss": "^4"
+@@ -2951,6 +2952,19 @@
+         "node": ">=0.10.0"
+       }
+     },
++    "node_modules/dotenv": {
++      "version": "17.4.2",
++      "resolved": "https://registry.npmjs.org/dotenv/-/dotenv-17.4.2.tgz",
++      "integrity": "sha512-nI4U3TottKAcAD9LLud4Cb7b2QztQMUEfHbvhTH09bqXTxnSie8WnjPALV/WMCrJZ6UV/qHJ6L03OqO3LcdYZw==",
++      "dev": true,
++      "license": "BSD-2-Clause",
++      "engines": {
++        "node": ">=12"
++      },
++      "funding": {
++        "url": "https://dotenvx.com"
++      }
++    },
+     "node_modules/dunder-proto": {
+       "version": "1.0.1",
+       "resolved": "https://registry.npmjs.org/dunder-proto/-/dunder-proto-1.0.1.tgz",
+diff --git a/package.json b/package.json
+index 3803eff..9873613 100644
+--- a/package.json
++++ b/package.json
+@@ -6,7 +6,10 @@
+     "dev": "next dev",
+     "build": "next build",
+     "start": "next start",
+-    "lint": "eslint"
++    "lint": "eslint",
++    "seed:auth": "node scripts/seed-auth-users.mjs",
++    "seed:db": "node scripts/seed-database.mjs",
++    "reset:db": "node scripts/reset-database.mjs"
+   },
+   "dependencies": {
+     "@supabase/ssr": "^0.12.3",
+@@ -17,6 +20,7 @@
+   },
+   "devDependencies": {
+     "@tailwindcss/postcss": "^4",
++    "dotenv": "^17.4.2",
+     "eslint": "^9",
+     "eslint-config-next": "16.2.10",
+     "tailwindcss": "^4"
+diff --git a/scripts/reset-database.mjs b/scripts/reset-database.mjs
+new file mode 100644
+index 0000000..edce6aa
+--- /dev/null
++++ b/scripts/reset-database.mjs
+@@ -0,0 +1,103 @@
++// scripts/reset-database.mjs
++//
++// DANGER: wipes every row from every app table AND deletes every Supabase
++// Auth user. Meant for cleaning up a messy dev/testing project before a
++// fresh `npm run seed:auth && npm run seed:db`.
++//
++// Usage:
++//   node scripts/reset-database.mjs --yes-i-am-sure
++//
++// (Requires the extra flag on purpose — this is destructive and
++// irreversible. There's no confirmation prompt beyond that.)
++
++import { createClient } from "@supabase/supabase-js";
++import { config } from "dotenv";
++import { fileURLToPath } from "url";
++import path from "path";
++
++const __dirname = path.dirname(fileURLToPath(import.meta.url));
++config({ path: path.resolve(__dirname, "../.env.local") });
++
++const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
++const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
++
++if (!url || !serviceKey) {
++  console.error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env.local");
++  process.exit(1);
++}
++
++if (!process.argv.includes("--yes-i-am-sure")) {
++  console.error(
++    "This deletes ALL rows in ALL tables and ALL Supabase Auth users.\n" +
++      "Re-run with: node scripts/reset-database.mjs --yes-i-am-sure"
++  );
++  process.exit(1);
++}
++
++const supabase = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
++
++// Child tables first, parents last — respects FK constraints.
++const TABLES_IN_DELETE_ORDER = [
++  "task_notifications",
++  "task_audit_log",
++  "task_chats",
++  "tasks",
++  "meeting_attendees",
++  "meetings",
++  "vera_conversations",
++  "employees",
++  "roles",
++  "divisions",
++  "branches",
++  "integration_settings",
++];
++
++async function wipeTables() {
++  for (const table of TABLES_IN_DELETE_ORDER) {
++    const { error, count } = await supabase.from(table).delete({ count: "exact" }).not("id", "is", null);
++    if (error) {
++      console.log(`  skip   ${table} — ${error.message}`);
++    } else {
++      console.log(`  ok     ${table} (${count ?? "?"} rows deleted)`);
++    }
++  }
++}
++
++async function wipeAuthUsers() {
++  let page = 1;
++  let total = 0;
++  while (true) {
++    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 200 });
++    if (error) {
++      console.error("  FAILED listing auth users:", error.message);
++      return;
++    }
++    if (!data.users.length) break;
++
++    for (const u of data.users) {
++      const { error: delErr } = await supabase.auth.admin.deleteUser(u.id);
++      if (delErr) console.log(`  FAILED  ${u.email} — ${delErr.message}`);
++      else {
++        console.log(`  deleted ${u.email}`);
++        total++;
++      }
++    }
++    if (data.users.length < 200) break;
++    page++;
++  }
++  console.log(`  ${total} auth user(s) deleted.`);
++}
++
++async function main() {
++  console.log("Wiping table data...");
++  await wipeTables();
++
++  console.log("\nDeleting Auth users...");
++  await wipeAuthUsers();
++
++  console.log("\nDone. Next steps:");
++  console.log("  npm run seed:auth   # recreate Auth accounts");
++  console.log("  npm run seed:db     # re-insert employees/meetings/tasks, linked to fresh Auth accounts");
++}
++
++main();
+diff --git a/scripts/seed-auth-users.mjs b/scripts/seed-auth-users.mjs
+new file mode 100644
+index 0000000..597d1ca
+--- /dev/null
++++ b/scripts/seed-auth-users.mjs
+@@ -0,0 +1,82 @@
++// scripts/seed-auth-users.mjs
++//
++// One-off helper: creates a Supabase Auth account for every employee in the
++// current in-memory directory (src/lib/vera/store.js), so login can be
++// tested end-to-end. Uses the SERVICE ROLE key (bypasses RLS, admin-only)
++// — run this locally, never ship the service role key to the client.
++//
++// Usage:
++//   node scripts/seed-auth-users.mjs
++//   node scripts/seed-auth-users.mjs --password="SomeOtherPass123"
++//
++// Every account is created already-confirmed (no verification email sent)
++// with the same temporary password, listed at the end so you can share it
++// with each employee to change on first login.
++
++import { createClient } from "@supabase/supabase-js";
++import { config } from "dotenv";
++import { fileURLToPath } from "url";
++import path from "path";
++
++config({ path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.env.local") });
++
++const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
++const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
++
++if (!url || !serviceKey) {
++  console.error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env.local");
++  process.exit(1);
++}
++
++const args = process.argv.slice(2);
++const passwordArg = args.find((a) => a.startsWith("--password="));
++const TEMP_PASSWORD = passwordArg ? passwordArg.split("=")[1] : "Vaulthos2026!";
++
++const supabase = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
++
++// Kept in sync manually with src/lib/vera/store.js's employees list — this
++// script is meant to be run once during setup, not imported into the app.
++const EMPLOYEES = [
++  "vaulthos@vaulthos.com",
++  "sarah@vaulthos.com",
++  "andi@vaulthos.com",
++  "rina@vaulthos.com",
++  "budi@vaulthos.com",
++  "citra@vaulthos.com",
++  "fajar@vaulthos.com",
++  "gita@vaulthos.com",
++  "hendra@vaulthos.com",
++  "indah@vaulthos.com",
++  "joko@vaulthos.com",
++  "kiki@vaulthos.com",
++  "lukman@vaulthos.com",
++  "maya@vaulthos.com",
++  "nanda@vaulthos.com",
++];
++
++async function main() {
++  console.log(`Creating ${EMPLOYEES.length} accounts with temporary password: ${TEMP_PASSWORD}\n`);
++
++  for (const email of EMPLOYEES) {
++    const { error } = await supabase.auth.admin.createUser({
++      email,
++      password: TEMP_PASSWORD,
++      email_confirm: true,
++    });
++
++    if (error) {
++      if (error.message.includes("already been registered")) {
++        console.log(`skip   ${email} (already exists)`);
++      } else {
++        console.log(`FAILED ${email} — ${error.message}`);
++      }
++    } else {
++      console.log(`ok     ${email}`);
++    }
++  }
++
++  console.log(`\nDone. Temporary password for all new accounts: ${TEMP_PASSWORD}`);
++  console.log("Each employee should sign in and use 'Forgot your password?' to set their own.");
++}
++
++main();
+diff --git a/scripts/seed-database.mjs b/scripts/seed-database.mjs
+new file mode 100644
+index 0000000..1b2d96b
+--- /dev/null
++++ b/scripts/seed-database.mjs
+@@ -0,0 +1,214 @@
++// scripts/seed-database.mjs
++//
++// One-off helper: pushes the current in-memory seed data (employees,
++// meetings, tasks, ...) from src/lib/vera/store.js into the real Supabase
++// tables defined in supabase/vera_schema.sql. Also links each employee to
++// their Supabase Auth account (created earlier via seed-auth-users.mjs) by
++// matching on email.
++//
++// Prerequisites:
++//   1. supabase/vera_schema.sql has been run against your project
++//      (Supabase Dashboard -> SQL Editor -> paste the file -> Run).
++//   2. npm run seed:auth has been run (or accounts created manually) so
++//      employees.auth_user_id has something to link to.
++//
++// Usage:
++//   node scripts/seed-database.mjs
++//
++// Safe to re-run: uses upsert on unique columns (email, employee_code,
++// name, meeting_code, task_code) so it won't create duplicates.
++
++import { createClient } from "@supabase/supabase-js";
++import { config } from "dotenv";
++import { fileURLToPath } from "url";
++import path from "path";
++
++const __dirname = path.dirname(fileURLToPath(import.meta.url));
++config({ path: path.resolve(__dirname, "../.env.local") });
++
++const { employees, meetings, tasks, divisions, branches } = await import("../src/lib/vera/store.js");
++
++const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
++const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
++
++if (!url || !serviceKey) {
++  console.error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env.local");
++  process.exit(1);
++}
++
++const supabase = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
++
++function fail(step, error) {
++  console.error(`\nFAILED at "${step}":`, error.message || error);
++  process.exit(1);
++}
++
++async function main() {
++  // ---------- 1. Divisions & branches ----------
++  console.log("Seeding divisions & branches...");
++  const { error: divErr } = await supabase
++    .from("divisions")
++    .upsert(divisions.map((name) => ({ name })), { onConflict: "name" });
++  if (divErr) fail("divisions", divErr);
++
++  const { error: branchErr } = await supabase
++    .from("branches")
++    .upsert(branches.map((name) => ({ name })), { onConflict: "name" });
++  if (branchErr) fail("branches", branchErr);
++
++  const { data: divRows, error: divSelErr } = await supabase.from("divisions").select("id, name");
++  if (divSelErr) fail("select divisions", divSelErr);
++  const divisionMap = Object.fromEntries(divRows.map((d) => [d.name, d.id]));
++
++  const { data: branchRows, error: branchSelErr } = await supabase.from("branches").select("id, name");
++  if (branchSelErr) fail("select branches", branchSelErr);
++  const branchMap = Object.fromEntries(branchRows.map((b) => [b.name, b.id]));
++
++  // ---------- 2. Roles ----------
++  console.log("Seeding roles...");
++  const roleNames = [...new Set(employees.map((e) => e.role))];
++  const { error: roleErr } = await supabase.from("roles").upsert(
++    roleNames.map((name) => ({
++      name,
++      permissions: name === "Superadmin" ? { can_manage_users: true, can_manage_settings: true } : {},
++    })),
++    { onConflict: "name" }
++  );
++  if (roleErr) fail("roles", roleErr);
++
++  const { data: roleRows, error: roleSelErr } = await supabase.from("roles").select("id, name");
++  if (roleSelErr) fail("select roles", roleSelErr);
++  const roleMap = Object.fromEntries(roleRows.map((r) => [r.name, r.id]));
++
++  // ---------- 3. Employees (linked to Auth accounts by email) ----------
++  console.log("Seeding employees...");
++  const { data: authList, error: authErr } = await supabase.auth.admin.listUsers({ perPage: 1000 });
++  if (authErr) fail("list auth users", authErr);
++  const authMap = Object.fromEntries(authList.users.map((u) => [u.email.toLowerCase(), u.id]));
++
++  const missingAuth = employees.filter((e) => !authMap[e.email.toLowerCase()]);
++  if (missingAuth.length) {
++    console.warn(
++      `  warning: ${missingAuth.length} employee(s) have no matching Auth account yet (run "npm run seed:auth" first): ` +
++        missingAuth.map((e) => e.email).join(", ")
++    );
++  }
++
++  const employeeRows = employees.map((e) => ({
++    employee_code: e.id,
++    auth_user_id: authMap[e.email.toLowerCase()] || null,
++    name: e.name,
++    email: e.email,
++    phone: e.phone || null,
++    identity_number: e.identityNumber || null,
++    address: e.address || null,
++    birth_date: e.birthDate || null,
++    join_date: e.joinDate || null,
++    role_id: roleMap[e.role] || null,
++    division_id: divisionMap[e.division] || null,
++    branch_id: branchMap[e.branch] || null,
++  }));
++
++  const { error: empErr } = await supabase.from("employees").upsert(employeeRows, { onConflict: "employee_code" });
++  if (empErr) fail("employees", empErr);
++
++  const { data: empRows, error: empSelErr } = await supabase.from("employees").select("id, employee_code");
++  if (empSelErr) fail("select employees", empSelErr);
++  const empMap = Object.fromEntries(empRows.map((e) => [e.employee_code, e.id]));
++
++  // ---------- 4. Meetings ----------
++  console.log("Seeding meetings...");
++  const meetingRows = meetings.map((m) => ({
++    meeting_code: m.id,
++    title: m.title,
++    date: m.date,
++    time: m.time,
++    location: m.location || null,
++    description: m.description || null,
++  }));
++  const { error: mtgErr } = await supabase.from("meetings").upsert(meetingRows, { onConflict: "meeting_code" });
++  if (mtgErr) fail("meetings", mtgErr);
++
++  const { data: mtgRows, error: mtgSelErr } = await supabase.from("meetings").select("id, meeting_code");
++  if (mtgSelErr) fail("select meetings", mtgSelErr);
++  const mtgMap = Object.fromEntries(mtgRows.map((m) => [m.meeting_code, m.id]));
++
++  console.log("Seeding meeting attendees...");
++  for (const m of meetings) {
++    if (!m.attendeeIds?.length) continue;
++    const attendeeRows = m.attendeeIds
++      .filter((empCode) => empMap[empCode])
++      .map((empCode) => ({ meeting_id: mtgMap[m.id], employee_id: empMap[empCode] }));
++    if (!attendeeRows.length) continue;
++    const { error } = await supabase
++      .from("meeting_attendees")
++      .upsert(attendeeRows, { onConflict: "meeting_id,employee_id" });
++    if (error) fail(`meeting_attendees (${m.id})`, error);
++  }
++
++  // ---------- 5. Tasks, chats, audit log ----------
++  console.log("Seeding tasks...");
++  const taskRows = tasks.map((t) => ({
++    task_code: t.id,
++    title: t.title,
++    description: t.description || null,
++    created_by: empMap[t.createdBy] || null,
++    assigned_to: empMap[t.assignedTo] || null,
++    status: t.status,
++    priority: t.priority,
++    due_date: t.dueDate ? new Date(t.dueDate).toISOString() : null,
++    ai_summary: t.aiSummary || null,
++    ai_summary_generated_at: t.aiSummaryGeneratedAt ? new Date(t.aiSummaryGeneratedAt).toISOString() : null,
++    ai_summary_generate_count: t.aiSummaryGenerateCount || 0,
++    ai_issue_analysis: t.aiIssueAnalysis || null,
++    ai_issue_analysis_generated_at: t.aiIssueAnalysisGeneratedAt
++      ? new Date(t.aiIssueAnalysisGeneratedAt).toISOString()
++      : null,
++    ai_issue_analysis_generate_count: t.aiIssueAnalysisGenerateCount || 0,
++  }));
++  const { error: taskErr } = await supabase.from("tasks").upsert(taskRows, { onConflict: "task_code" });
++  if (taskErr) fail("tasks", taskErr);
++
++  const { data: taskRowsBack, error: taskSelErr } = await supabase.from("tasks").select("id, task_code");
++  if (taskSelErr) fail("select tasks", taskSelErr);
++  const taskMap = Object.fromEntries(taskRowsBack.map((t) => [t.task_code, t.id]));
++
++  console.log("Seeding task chats & audit log...");
++  for (const t of tasks) {
++    const taskId = taskMap[t.id];
++    if (!taskId) continue;
++
++    if (t.chats?.length) {
++      const chatRows = t.chats.map((c) => ({
++        task_id: taskId,
++        sender_id: c.senderId ? empMap[c.senderId] || null : null,
++        message: c.message || null,
++        is_system: !!c.isSystem,
++        action: c.action || null,
++        created_at: new Date(c.createdAt).toISOString(),
++      }));
++      const { error } = await supabase.from("task_chats").insert(chatRows);
++      if (error) fail(`task_chats (${t.id})`, error);
++    }
++
++    if (t.auditLog?.length) {
++      const auditRows = t.auditLog.map((a) => ({
++        task_id: taskId,
++        action: a.action,
++        by_user_id: empMap[a.byUserId] || null,
++        detail: a.detail || null,
++        created_at: new Date(a.createdAt).toISOString(),
++      }));
++      const { error } = await supabase.from("task_audit_log").insert(auditRows);
++      if (error) fail(`task_audit_log (${t.id})`, error);
++    }
++  }
++
++  console.log("\nDone. Seeded:");
++  console.log(`  ${divisions.length} divisions, ${branches.length} branches, ${roleNames.length} roles`);
++  console.log(`  ${employees.length} employees (${employees.length - missingAuth.length} linked to Auth accounts)`);
++  console.log(`  ${meetings.length} meetings`);
++  console.log(`  ${tasks.length} tasks (with chats & audit log)`);
++}
++
++main();
+diff --git a/src/app/api/employees/[id]/route.js b/src/app/api/employees/[id]/route.js
+index 4d178c8..496f759 100644
+--- a/src/app/api/employees/[id]/route.js
++++ b/src/app/api/employees/[id]/route.js
+@@ -1,17 +1,17 @@
+ import { NextResponse } from "next/server";
+-import { updateEmployee, deleteEmployee } from "@/lib/vera/store";
++import { updateEmployee, deleteEmployee } from "@/lib/supabase/directory";
+ 
+ export async function PUT(request, { params }) {
+   const { id } = await params;
+   const body = await request.json();
+-  const result = updateEmployee(id, body);
++  const result = await updateEmployee(id, body);
+   if (!result.success) return NextResponse.json({ error: result.error }, { status: 404 });
+   return NextResponse.json(result);
+ }
+ 
+ export async function DELETE(request, { params }) {
+   const { id } = await params;
+-  const result = deleteEmployee(id);
++  const result = await deleteEmployee(id);
+   if (!result.success) return NextResponse.json({ error: "Employee not found." }, { status: 404 });
+   return NextResponse.json(result);
+ }
+diff --git a/src/app/api/employees/route.js b/src/app/api/employees/route.js
+index 1efc86c..5eef564 100644
+--- a/src/app/api/employees/route.js
++++ b/src/app/api/employees/route.js
+@@ -1,8 +1,8 @@
+ import { NextResponse } from "next/server";
+-import { getEmployees, createEmployee } from "@/lib/vera/store";
++import { getEmployees, createEmployee } from "@/lib/supabase/directory";
+ 
+ export async function GET() {
+-  return NextResponse.json({ employees: getEmployees() });
++  return NextResponse.json({ employees: await getEmployees() });
+ }
+ 
+ export async function POST(request) {
+@@ -10,7 +10,7 @@ export async function POST(request) {
+   if (!body.id || !body.name || !body.email) {
+     return NextResponse.json({ error: "Employee ID, Name, and Email are required." }, { status: 400 });
+   }
+-  const result = createEmployee(body);
++  const result = await createEmployee(body);
+   if (!result.success) return NextResponse.json({ error: result.error }, { status: 400 });
+   return NextResponse.json(result);
+ }
+diff --git a/src/app/api/meetings/[id]/route.js b/src/app/api/meetings/[id]/route.js
+index 22ee744..6cc4f93 100644
+--- a/src/app/api/meetings/[id]/route.js
++++ b/src/app/api/meetings/[id]/route.js
+@@ -1,17 +1,17 @@
+ import { NextResponse } from "next/server";
+-import { updateMeeting, deleteMeeting } from "@/lib/vera/store";
++import { updateMeeting, deleteMeeting } from "@/lib/supabase/meetings";
+ 
+ export async function PUT(request, { params }) {
+   const { id } = await params;
+   const body = await request.json();
+-  const result = updateMeeting(id, body);
++  const result = await updateMeeting(id, body);
+   if (!result.success) return NextResponse.json({ error: result.error }, { status: 404 });
+   return NextResponse.json(result);
+ }
+ 
+ export async function DELETE(request, { params }) {
+   const { id } = await params;
+-  const result = deleteMeeting(id);
++  const result = await deleteMeeting(id);
+   if (!result.success) return NextResponse.json({ error: "Meeting not found." }, { status: 404 });
+   return NextResponse.json(result);
+ }
+diff --git a/src/app/api/meetings/route.js b/src/app/api/meetings/route.js
+index 919106a..37888e8 100644
+--- a/src/app/api/meetings/route.js
++++ b/src/app/api/meetings/route.js
+@@ -1,8 +1,8 @@
+ import { NextResponse } from "next/server";
+-import { getMeetings, createMeeting } from "@/lib/vera/store";
++import { getMeetings, createMeeting } from "@/lib/supabase/meetings";
+ 
+ export async function GET() {
+-  return NextResponse.json({ meetings: getMeetings() });
++  return NextResponse.json({ meetings: await getMeetings() });
+ }
+ 
+ export async function POST(request) {
+@@ -10,6 +10,6 @@ export async function POST(request) {
+   if (!body.title || !body.date || !body.time) {
+     return NextResponse.json({ error: "Title, Date, and Time are required." }, { status: 400 });
+   }
+-  const result = createMeeting(body);
++  const result = await createMeeting(body);
+   return NextResponse.json(result);
+ }
+diff --git a/src/app/api/notifications/route.js b/src/app/api/notifications/route.js
+index de9ed4c..7c8ce19 100644
+--- a/src/app/api/notifications/route.js
++++ b/src/app/api/notifications/route.js
+@@ -1,11 +1,11 @@
+ import { NextResponse } from "next/server";
+-import { getNotifications, markAllNotificationsRead, markNotificationRead } from "@/lib/vera/store";
++import { getNotifications, markAllNotificationsRead, markNotificationRead } from "@/lib/supabase/notifications";
+ 
+ export async function GET() {
+-  return NextResponse.json({ notifications: getNotifications() });
++  return NextResponse.json({ notifications: await getNotifications() });
+ }
+ export async function PUT(request) {
+   const body = await request.json().catch(() => ({}));
+-  if (body.id) return NextResponse.json({ notifications: markNotificationRead(body.id) });
+-  return NextResponse.json({ notifications: markAllNotificationsRead() });
++  if (body.id) return NextResponse.json({ notifications: await markNotificationRead(body.id) });
++  return NextResponse.json({ notifications: await markAllNotificationsRead() });
+ }
+diff --git a/src/app/api/settings/branches/route.js b/src/app/api/settings/branches/route.js
+index 810fff8..2da24a0 100644
+--- a/src/app/api/settings/branches/route.js
++++ b/src/app/api/settings/branches/route.js
+@@ -1,24 +1,24 @@
+ import { NextResponse } from "next/server";
+-import { getBranches, addBranch, deleteBranch, renameBranch } from "@/lib/vera/store";
++import { getBranches, addBranch, deleteBranch, renameBranch } from "@/lib/supabase/directory";
+ 
+ export async function GET() {
+-  return NextResponse.json({ branches: getBranches() });
++  return NextResponse.json({ branches: await getBranches() });
+ }
+ export async function POST(request) {
+   const { name } = await request.json();
+   if (!name?.trim()) return NextResponse.json({ error: "Branch name is required." }, { status: 400 });
+-  const result = addBranch(name.trim());
++  const result = await addBranch(name.trim());
+   if (!result.success) return NextResponse.json({ error: result.error }, { status: 400 });
+   return NextResponse.json(result);
+ }
+ export async function PUT(request) {
+   const { oldName, newName } = await request.json();
+-  const result = renameBranch(oldName, newName.trim());
++  const result = await renameBranch(oldName, newName.trim());
+   if (!result.success) return NextResponse.json({ error: result.error }, { status: 400 });
+   return NextResponse.json(result);
+ }
+ export async function DELETE(request) {
+   const { name } = await request.json();
+-  const result = deleteBranch(name);
++  const result = await deleteBranch(name);
+   return NextResponse.json(result);
+ }
+diff --git a/src/app/api/settings/divisions/route.js b/src/app/api/settings/divisions/route.js
+index 2bd3bc9..9eb655d 100644
+--- a/src/app/api/settings/divisions/route.js
++++ b/src/app/api/settings/divisions/route.js
+@@ -1,24 +1,24 @@
+ import { NextResponse } from "next/server";
+-import { getDivisions, addDivision, deleteDivision, renameDivision } from "@/lib/vera/store";
++import { getDivisions, addDivision, deleteDivision, renameDivision } from "@/lib/supabase/directory";
+ 
+ export async function GET() {
+-  return NextResponse.json({ divisions: getDivisions() });
++  return NextResponse.json({ divisions: await getDivisions() });
+ }
+ export async function POST(request) {
+   const { name } = await request.json();
+   if (!name?.trim()) return NextResponse.json({ error: "Division name is required." }, { status: 400 });
+-  const result = addDivision(name.trim());
++  const result = await addDivision(name.trim());
+   if (!result.success) return NextResponse.json({ error: result.error }, { status: 400 });
+   return NextResponse.json(result);
+ }
+ export async function PUT(request) {
+   const { oldName, newName } = await request.json();
+-  const result = renameDivision(oldName, newName.trim());
++  const result = await renameDivision(oldName, newName.trim());
+   if (!result.success) return NextResponse.json({ error: result.error }, { status: 400 });
+   return NextResponse.json(result);
+ }
+ export async function DELETE(request) {
+   const { name } = await request.json();
+-  const result = deleteDivision(name);
++  const result = await deleteDivision(name);
+   return NextResponse.json(result);
+ }
+diff --git a/src/app/api/tasks/[id]/chats/route.js b/src/app/api/tasks/[id]/chats/route.js
+index 60734be..70f930a 100644
+--- a/src/app/api/tasks/[id]/chats/route.js
++++ b/src/app/api/tasks/[id]/chats/route.js
+@@ -1,5 +1,5 @@
+ import { NextResponse } from "next/server";
+-import { addTaskChat, CURRENT_USER_ID } from "@/lib/vera/store";
++import { addTaskChat } from "@/lib/supabase/tasks";
+ import { callClaude } from "@/lib/vera/claude";
+ import { TASK_SYSTEM_PROMPT_MODERATION } from "@/lib/vera/taskPrompts";
+ 
+@@ -21,7 +21,7 @@ export async function POST(request, { params }) {
+     }
+   }
+ 
+-  const result = addTaskChat(id, CURRENT_USER_ID, finalMessage, attachment);
++  const result = await addTaskChat(id, finalMessage, attachment);
+   if (!result.success) return NextResponse.json({ error: result.error }, { status: 404 });
+   return NextResponse.json({ ...result, moderated });
+ }
+diff --git a/src/app/api/tasks/[id]/issue-analysis/route.js b/src/app/api/tasks/[id]/issue-analysis/route.js
+index 1e91310..28cc35a 100644
+--- a/src/app/api/tasks/[id]/issue-analysis/route.js
++++ b/src/app/api/tasks/[id]/issue-analysis/route.js
+@@ -1,11 +1,11 @@
+ import { NextResponse } from "next/server";
+-import { getTaskById, updateTask, taskUserById } from "@/lib/vera/store";
++import { getTaskById, updateTask } from "@/lib/supabase/tasks";
+ import { callClaude } from "@/lib/vera/claude";
+ import { TASK_SYSTEM_PROMPT_ISSUE_ANALYSIS } from "@/lib/vera/taskPrompts";
+ 
+ export async function POST(request, { params }) {
+   const { id } = await params;
+-  const task = getTaskById(id);
++  const task = await getTaskById(id);
+   if (!task) return NextResponse.json({ error: "Task not found." }, { status: 404 });
+   if ((task.aiIssueAnalysisGenerateCount || 0) >= 2) {
+     return NextResponse.json({ error: "You've reached the 2x generate limit for this feature." }, { status: 429 });
+@@ -16,14 +16,14 @@ export async function POST(request, { params }) {
+ 
+   const transcript = task.chats
+     .filter((c) => !c.isSystem)
+-    .map((c) => `${taskUserById(c.senderId).name}: ${c.message}`)
++    .map((c) => `${c.senderName || "Unknown"}: ${c.message}`)
+     .join("\n");
+   const contextText = `Task: "${task.title}"\n\nDescription:\n${task.description}\n\nChat history:\n${transcript || "(no chat yet)"}`;
+ 
+   try {
+     const analysis = await callClaude(TASK_SYSTEM_PROMPT_ISSUE_ANALYSIS, contextText);
+     const previousAnalysis = task.aiIssueAnalysis ? { content: task.aiIssueAnalysis, createdAt: task.aiIssueAnalysisGeneratedAt } : null;
+-    const result = updateTask(id, {
++    const result = await updateTask(id, {
+       aiIssueAnalysis: analysis,
+       aiIssueAnalysisGeneratedAt: Date.now(),
+       aiIssueAnalysisGenerateCount: (task.aiIssueAnalysisGenerateCount || 0) + 1,
+diff --git a/src/app/api/tasks/[id]/route.js b/src/app/api/tasks/[id]/route.js
+index abbc2ba..5cdcd09 100644
+--- a/src/app/api/tasks/[id]/route.js
++++ b/src/app/api/tasks/[id]/route.js
+@@ -1,9 +1,9 @@
+ import { NextResponse } from "next/server";
+-import { getTaskById, updateTask, deleteTask, pushTaskAudit } from "@/lib/vera/store";
++import { getTaskById, updateTask, deleteTask, pushTaskAudit } from "@/lib/supabase/tasks";
+ 
+ export async function GET(request, { params }) {
+   const { id } = await params;
+-  const task = getTaskById(id);
++  const task = await getTaskById(id);
+   if (!task) return NextResponse.json({ error: "Task not found." }, { status: 404 });
+   return NextResponse.json({ task });
+ }
+@@ -11,7 +11,7 @@ export async function GET(request, { params }) {
+ export async function PUT(request, { params }) {
+   const { id } = await params;
+   const body = await request.json();
+-  const task = getTaskById(id);
++  const task = await getTaskById(id);
+   if (!task) return NextResponse.json({ error: "Task not found." }, { status: 404 });
+ 
+   const changes = [];
+@@ -21,14 +21,19 @@ export async function PUT(request, { params }) {
+   if (body.assignedTo !== undefined && body.assignedTo !== task.assignedTo) changes.push(`reassigned`);
+   if (body.description !== undefined && body.description !== task.description) changes.push(`description updated`);
+ 
+-  const result = updateTask(id, body);
+-  if (changes.length) pushTaskAudit(id, "edited", changes.join("; "));
++  const result = await updateTask(id, body);
++  if (changes.length) await pushTaskAudit(id, "edited", changes.join("; "));
++
++  if (result.success) {
++    const refreshed = await getTaskById(id);
++    return NextResponse.json({ success: true, task: refreshed });
++  }
+   return NextResponse.json(result);
+ }
+ 
+ export async function DELETE(request, { params }) {
+   const { id } = await params;
+-  const result = deleteTask(id);
++  const result = await deleteTask(id);
+   if (!result.success) return NextResponse.json({ error: "Task not found." }, { status: 404 });
+   return NextResponse.json(result);
+ }
+diff --git a/src/app/api/tasks/[id]/status/route.js b/src/app/api/tasks/[id]/status/route.js
+index 75da203..4939cdb 100644
+--- a/src/app/api/tasks/[id]/status/route.js
++++ b/src/app/api/tasks/[id]/status/route.js
+@@ -1,10 +1,10 @@
+ import { NextResponse } from "next/server";
+-import { changeTaskStatus } from "@/lib/vera/store";
++import { changeTaskStatus } from "@/lib/supabase/tasks";
+ 
+ export async function PUT(request, { params }) {
+   const { id } = await params;
+   const { status } = await request.json();
+-  const result = changeTaskStatus(id, status);
++  const result = await changeTaskStatus(id, status);
+   if (!result.success) return NextResponse.json({ error: result.error }, { status: 404 });
+   return NextResponse.json(result);
+ }
+diff --git a/src/app/api/tasks/[id]/summary/route.js b/src/app/api/tasks/[id]/summary/route.js
+index d3d97eb..73e8c5f 100644
+--- a/src/app/api/tasks/[id]/summary/route.js
++++ b/src/app/api/tasks/[id]/summary/route.js
+@@ -1,11 +1,11 @@
+ import { NextResponse } from "next/server";
+-import { getTaskById, updateTask, taskUserById } from "@/lib/vera/store";
++import { getTaskById, updateTask } from "@/lib/supabase/tasks";
+ import { callClaude } from "@/lib/vera/claude";
+ import { TASK_SYSTEM_PROMPT_SUMMARY } from "@/lib/vera/taskPrompts";
+ 
+ export async function POST(request, { params }) {
+   const { id } = await params;
+-  const task = getTaskById(id);
++  const task = await getTaskById(id);
+   if (!task) return NextResponse.json({ error: "Task not found." }, { status: 404 });
+   if ((task.aiSummaryGenerateCount || 0) >= 2) {
+     return NextResponse.json({ error: "You've reached the 2x generate limit for this feature." }, { status: 429 });
+@@ -16,13 +16,13 @@ export async function POST(request, { params }) {
+ 
+   const transcript = task.chats
+     .filter((c) => !c.isSystem)
+-    .map((c) => `${taskUserById(c.senderId).name}: ${c.message}`)
++    .map((c) => `${c.senderName || "Unknown"}: ${c.message}`)
+     .join("\n");
+ 
+   try {
+     const summary = await callClaude(TASK_SYSTEM_PROMPT_SUMMARY, `Chat history for task "${task.title}":\n\n${transcript}`);
+     const previousSummary = task.aiSummary ? { content: task.aiSummary, createdAt: task.aiSummaryGeneratedAt } : null;
+-    const result = updateTask(id, {
++    const result = await updateTask(id, {
+       aiSummary: summary,
+       aiSummaryGeneratedAt: Date.now(),
+       aiSummaryGenerateCount: (task.aiSummaryGenerateCount || 0) + 1,
+diff --git a/src/app/api/tasks/route.js b/src/app/api/tasks/route.js
+index fbc304d..eba0f78 100644
+--- a/src/app/api/tasks/route.js
++++ b/src/app/api/tasks/route.js
+@@ -1,8 +1,8 @@
+ import { NextResponse } from "next/server";
+-import { getTasks, createTask } from "@/lib/vera/store";
++import { getTasks, createTask } from "@/lib/supabase/tasks";
+ 
+ export async function GET() {
+-  return NextResponse.json({ tasks: getTasks() });
++  return NextResponse.json({ tasks: await getTasks() });
+ }
+ 
+ export async function POST(request) {
+@@ -10,7 +10,7 @@ export async function POST(request) {
+   if (!body.title || !body.assignedTo) {
+     return NextResponse.json({ error: "Title and assignee are required." }, { status: 400 });
+   }
+-  const result = createTask(body);
++  const result = await createTask(body);
+   if (!result.success) return NextResponse.json({ error: result.error }, { status: 400 });
+   return NextResponse.json(result);
+ }
+diff --git a/src/app/api/vera/chat/route.js b/src/app/api/vera/chat/route.js
+index 674deeb..ead75a2 100644
+--- a/src/app/api/vera/chat/route.js
++++ b/src/app/api/vera/chat/route.js
+@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
+ import { VERA_TOOLS } from "@/lib/vera/tools";
+ import { buildVeraSystemPrompt } from "@/lib/vera/systemPrompt";
+ import { executeVeraTool } from "@/lib/vera/executeTool";
+-import { getDivisions, getBranches } from "@/lib/vera/store";
++import { getDivisions, getBranches } from "@/lib/supabase/directory";
+ 
+ const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+ const MODEL = "claude-sonnet-4-6";
+@@ -70,8 +70,8 @@ export async function POST(request) {
+       return NextResponse.json({ error: "Missing conversation history." }, { status: 400 });
+     }
+ 
+-    const divisions = getDivisions();
+-    const branches = getBranches();
++    const divisions = await getDivisions();
++    const branches = await getBranches();
+     const systemPrompt = buildVeraSystemPrompt(divisions, branches);
+ 
+     const lastUserMsg = [...history].reverse().find((m) => m.role === "user");
+diff --git a/src/app/globals.css b/src/app/globals.css
+index d829103..5ae9e71 100644
+--- a/src/app/globals.css
++++ b/src/app/globals.css
+@@ -316,6 +316,14 @@ select.input{cursor:pointer}
+   border-radius:9px;padding:11px 13px 11px 36px;font-size:13.5px;color:var(--text);font-family:inherit;outline:none;
+ }
+ .login-field-input:focus{border-color:var(--accent)}
++.login-field-input[type="password"],.login-field-input[type="text"]{padding-right:38px}
++.login-field-icon-btn{
++  position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--text3);
++  background:none;border:none;padding:4px;display:flex;cursor:pointer;line-height:0;
++}
++.login-field-icon-btn:hover{color:var(--text2)}
++.login-submit-btn:disabled{opacity:.65;cursor:not-allowed}
++.login-form-note{font-size:12.5px;color:var(--text2);line-height:1.6;margin-bottom:16px}
+ .login-pin-row{display:flex;gap:8px;margin-bottom:18px}
+ .login-pin-box{
+   width:100%;box-sizing:border-box;text-align:center;font-size:16px;font-weight:700;
+diff --git a/src/app/reset-password/page.js b/src/app/reset-password/page.js
+new file mode 100644
+index 0000000..5c6f533
+--- /dev/null
++++ b/src/app/reset-password/page.js
+@@ -0,0 +1,167 @@
++// src/app/reset-password/page.js
++"use client";
++import { useState, useEffect } from "react";
++import { useRouter } from "next/navigation";
++import AuthShell from "@/components/auth/AuthShell";
++import Icon from "@/lib/Icon";
++import { createClient } from "@/lib/supabase/client";
++import { updatePassword } from "@/lib/supabase/auth";
++
++export default function ResetPasswordPage() {
++  const router = useRouter();
++  const [ready, setReady] = useState(false);
++  const [invalidLink, setInvalidLink] = useState(false);
++  const [password, setPassword] = useState("");
++  const [confirmPassword, setConfirmPassword] = useState("");
++  const [showPassword, setShowPassword] = useState(false);
++  const [error, setError] = useState("");
++  const [loading, setLoading] = useState(false);
++  const [done, setDone] = useState(false);
++
++  useEffect(() => {
++    const supabase = createClient();
++
++    // Supabase fires PASSWORD_RECOVERY once it parses the recovery token
++    // from the URL. If that never fires and there's no session either, the
++    // link was invalid or already used.
++    const {
++      data: { subscription },
++    } = supabase.auth.onAuthStateChange((event) => {
++      if (event === "PASSWORD_RECOVERY") setReady(true);
++    });
++
++    supabase.auth.getSession().then(({ data: { session } }) => {
++      if (session) setReady(true);
++    });
++
++    const timeout = setTimeout(() => {
++      setReady((r) => {
++        if (!r) setInvalidLink(true);
++        return r;
++      });
++    }, 3000);
++
++    return () => {
++      subscription.unsubscribe();
++      clearTimeout(timeout);
++    };
++  }, []);
++
++  const handleSubmit = async () => {
++    if (password.length < 8) {
++      setError("Password must be at least 8 characters.");
++      return;
++    }
++    if (password !== confirmPassword) {
++      setError("Passwords do not match.");
++      return;
++    }
++    setError("");
++    setLoading(true);
++    const { error: updateError } = await updatePassword(password);
++    setLoading(false);
++    if (updateError) {
++      setError(updateError);
++      return;
++    }
++    setDone(true);
++  };
++
++  if (invalidLink) {
++    return (
++      <AuthShell>
++        <div style={{ textAlign: "center", padding: "12px 0" }}>
++          <div className="login-form-title">Link expired</div>
++          <div className="login-form-sub" style={{ marginBottom: 24 }}>
++            This reset link is invalid or has expired. Please request a new one.
++          </div>
++          <button type="button" className="login-submit-btn" onClick={() => router.replace("/login")}>
++            Back to Sign in
++          </button>
++        </div>
++      </AuthShell>
++    );
++  }
++
++  if (done) {
++    return (
++      <AuthShell>
++        <div style={{ textAlign: "center", padding: "12px 0" }}>
++          <div className="login-reset-success-icon">
++            <Icon name="check" size={22} />
++          </div>
++          <div className="login-form-title" style={{ marginTop: 14 }}>
++            Password updated
++          </div>
++          <div className="login-form-sub" style={{ marginBottom: 24 }}>
++            Your password has been reset. Please sign in with your new password.
++          </div>
++          <button type="button" className="login-submit-btn" onClick={() => router.replace("/login")}>
++            Back to Sign in
++          </button>
++        </div>
++      </AuthShell>
++    );
++  }
++
++  if (!ready) return null;
++
++  return (
++    <AuthShell>
++      <div className="login-form-title">Set a new password</div>
++      <div className="login-form-sub">Choose a new password for your account.</div>
++
++      <label className="login-field-label">New password</label>
++      <div className="login-field-wrap">
++        <span className="login-field-icon">
++          <Icon name="lock" size={15} />
++        </span>
++        <input
++          className="login-field-input"
++          type={showPassword ? "text" : "password"}
++          placeholder="At least 8 characters"
++          value={password}
++          onChange={(e) => setPassword(e.target.value)}
++          autoComplete="new-password"
++        />
++        <button
++          type="button"
++          className="login-field-icon-btn"
++          onClick={() => setShowPassword((v) => !v)}
++          tabIndex={-1}
++          aria-label={showPassword ? "Hide password" : "Show password"}
++        >
++          <Icon name={showPassword ? "eye-off" : "eye"} size={15} />
++        </button>
++      </div>
++
++      <label className="login-field-label">Confirm new password</label>
++      <div className="login-field-wrap">
++        <span className="login-field-icon">
++          <Icon name="lock" size={15} />
++        </span>
++        <input
++          className="login-field-input"
++          type={showPassword ? "text" : "password"}
++          placeholder="Re-enter password"
++          value={confirmPassword}
++          onChange={(e) => setConfirmPassword(e.target.value)}
++          onKeyDown={(e) => {
++            if (e.key === "Enter") handleSubmit();
++          }}
++          autoComplete="new-password"
++        />
++      </div>
++
++      {error && (
++        <div className="form-error" style={{ marginBottom: 14 }}>
++          {error}
++        </div>
++      )}
++
++      <button type="button" className="login-submit-btn" onClick={handleSubmit} disabled={loading}>
++        {loading ? "Updating…" : "Update password"}
++      </button>
++    </AuthShell>
++  );
++}
+diff --git a/src/app/tasks/page.js b/src/app/tasks/page.js
+index 2045600..1dbe280 100644
+--- a/src/app/tasks/page.js
++++ b/src/app/tasks/page.js
+@@ -7,12 +7,14 @@ import TaskIndex from "@/components/tasks/TaskIndex";
+ import TaskDetailView from "@/components/tasks/TaskDetailView";
+ import TaskCreateModal from "@/components/tasks/TaskCreateModal";
+ import { taskTimeAgo } from "@/lib/vera/taskUiHelpers";
++import { loadSession } from "@/lib/session";
+ 
+ export default function TasksPage() {
+   const [tasks, setTasks] = useState([]);
+   const [employees, setEmployees] = useState([]);
+   const [notifications, setNotifications] = useState([]);
+   const [loading, setLoading] = useState(true);
++  const [currentUserId] = useState(() => loadSession()?.user?.id || null);
+ 
+   const [view, setView] = useState("index");
+   const [selectedTaskId, setSelectedTaskId] = useState(null);
+@@ -193,6 +195,7 @@ export default function TasksPage() {
+           <TaskDetailView
+             task={selectedTask}
+             employees={employees}
++            currentUserId={currentUserId}
+             onBack={() => setView("index")}
+             onUpdateTask={(patch) => updateTask(selectedTask.id, patch)}
+             onEditTask={(patch) => handleEditTask(selectedTask, patch)}
+@@ -202,7 +205,9 @@ export default function TasksPage() {
+           />
+         )}
+ 
+-        {showCreateModal && <TaskCreateModal onClose={() => setShowCreateModal(false)} onCreate={handleCreateTask} employees={employees} />}
++        {showCreateModal && (
++          <TaskCreateModal onClose={() => setShowCreateModal(false)} onCreate={handleCreateTask} employees={employees} currentUserId={currentUserId} />
++        )}
+       </div>
+     </DashboardLayout>
+   );
+diff --git a/src/components/auth/AuthGate.jsx b/src/components/auth/AuthGate.jsx
+index e776e82..48eb380 100644
+--- a/src/components/auth/AuthGate.jsx
++++ b/src/components/auth/AuthGate.jsx
+@@ -2,12 +2,12 @@
+ "use client";
+ import { useState } from "react";
+ import LoginScreen from "./LoginScreen";
+-import ResetPinForm from "./ResetPinForm";
++import ForgotPasswordForm from "./ForgotPasswordForm";
+ 
+ export default function AuthGate({ onLogin }) {
+-  const [screen, setScreen] = useState("login"); // "login" | "reset"
+-  if (screen === "reset") {
+-    return <ResetPinForm onBack={() => setScreen("login")} />;
++  const [screen, setScreen] = useState("login"); // "login" | "forgot-password"
++  if (screen === "forgot-password") {
++    return <ForgotPasswordForm onBack={() => setScreen("login")} />;
+   }
+-  return <LoginScreen onLogin={onLogin} onForgotPin={() => setScreen("reset")} />;
++  return <LoginScreen onLogin={onLogin} onForgotPassword={() => setScreen("forgot-password")} />;
+ }
+diff --git a/src/components/auth/ForgotPasswordForm.jsx b/src/components/auth/ForgotPasswordForm.jsx
+new file mode 100644
+index 0000000..4f8059a
+--- /dev/null
++++ b/src/components/auth/ForgotPasswordForm.jsx
+@@ -0,0 +1,105 @@
++// src/components/auth/ForgotPasswordForm.jsx
++"use client";
++import { useState } from "react";
++import Icon from "@/lib/Icon";
++import AuthShell from "./AuthShell";
++import { requestPasswordReset } from "@/lib/supabase/auth";
++
++export default function ForgotPasswordForm({ onBack }) {
++  const [email, setEmail] = useState("");
++  const [error, setError] = useState("");
++  const [loading, setLoading] = useState(false);
++  const [sent, setSent] = useState(false);
++
++  const handleSubmit = async () => {
++    const trimmed = email.trim().toLowerCase();
++    if (!trimmed) {
++      setError("Please enter your email.");
++      return;
++    }
++    setError("");
++    setLoading(true);
++    const { error: resetError } = await requestPasswordReset(trimmed);
++    setLoading(false);
++
++    // Always show the same success state whether or not the email exists —
++    // this avoids leaking which emails are registered.
++    if (resetError && !resetError.toLowerCase().includes("rate")) {
++      setSent(true);
++      return;
++    }
++    if (resetError) {
++      setError(resetError);
++      return;
++    }
++    setSent(true);
++  };
++
++  if (sent) {
++    return (
++      <AuthShell>
++        <div style={{ textAlign: "center", padding: "12px 0" }}>
++          <div className="login-reset-success-icon">
++            <Icon name="check" size={22} />
++          </div>
++          <div className="login-form-title" style={{ marginTop: 14 }}>
++            Check your email
++          </div>
++          <div className="login-form-sub" style={{ marginBottom: 24 }}>
++            If an account exists for <b>{email.trim().toLowerCase()}</b>, we&rsquo;ve sent a link to reset your
++            password.
++          </div>
++          <button type="button" className="login-submit-btn" onClick={onBack}>
++            Back to Sign in
++          </button>
++        </div>
++      </AuthShell>
++    );
++  }
++
++  return (
++    <AuthShell>
++      <button
++        type="button"
++        className="login-back-btn"
++        onClick={() => {
++          setError("");
++          onBack();
++        }}
++      >
++        <Icon name="arrow-left" size={14} /> Back
++      </button>
++
++      <div className="login-form-title">Reset your password</div>
++      <div className="login-form-sub">Enter your registered email and we&rsquo;ll send you a reset link.</div>
++
++      <label className="login-field-label">Email</label>
++      <div className="login-field-wrap">
++        <span className="login-field-icon">
++          <Icon name="address-book" size={15} />
++        </span>
++        <input
++          className="login-field-input"
++          type="email"
++          placeholder="you@vaulthos.com"
++          value={email}
++          onChange={(e) => setEmail(e.target.value)}
++          onKeyDown={(e) => {
++            if (e.key === "Enter") handleSubmit();
++          }}
++          autoComplete="email"
++        />
++      </div>
++
++      {error && (
++        <div className="form-error" style={{ marginBottom: 14 }}>
++          {error}
++        </div>
++      )}
++
++      <button type="button" className="login-submit-btn" onClick={handleSubmit} disabled={loading}>
++        {loading ? "Sending…" : "Send reset link"}
++      </button>
++    </AuthShell>
++  );
++}
+diff --git a/src/components/auth/LoginScreen.jsx b/src/components/auth/LoginScreen.jsx
+index 2b4f723..4b017c5 100644
+--- a/src/components/auth/LoginScreen.jsx
++++ b/src/components/auth/LoginScreen.jsx
+@@ -1,36 +1,20 @@
+ // src/components/auth/LoginScreen.jsx
+ "use client";
+-import { useState, useRef } from "react";
++import { useState } from "react";
+ import Icon from "@/lib/Icon";
+ import AuthShell from "./AuthShell";
+-import { EMPLOYEES } from "@/lib/vera/store";
++import { employees } from "@/lib/vera/store";
++import { signInWithPassword } from "@/lib/supabase/auth";
++import { fetchEmployeeByAuthUserId, fetchEmployeeByEmail } from "@/lib/supabase/employees";
+ 
+-// Demo-only validation, ported as-is from the HTML prototype. TODO: replace
+-// with real Supabase Auth once migration Fase 2 starts — this is NOT secure
+-// (plaintext PIN check against an in-memory list) and must not stay this way
+-// in production.
+-const DEFAULT_PIN = "123456";
+-const AUTH_PINS = { "vaulthos@vaulthos.com": "123456" };
+-
+-export default function LoginScreen({ onLogin, onForgotPin }) {
++export default function LoginScreen({ onLogin, onForgotPassword }) {
+   const [email, setEmail] = useState("");
+-  const [pin, setPin] = useState(["", "", "", "", "", ""]);
++  const [password, setPassword] = useState("");
++  const [showPassword, setShowPassword] = useState(false);
+   const [error, setError] = useState("");
+-  const pinRefs = useRef([]);
+-
+-  const handlePinChange = (i, val) => {
+-    if (!/^[0-9]?$/.test(val)) return;
+-    const next = [...pin];
+-    next[i] = val;
+-    setPin(next);
+-    if (val && i < 5) pinRefs.current[i + 1]?.focus();
+-  };
++  const [loading, setLoading] = useState(false);
+ 
+-  const handlePinKeyDown = (i, e) => {
+-    if (e.key === "Backspace" && !pin[i] && i > 0) pinRefs.current[i - 1]?.focus();
+-  };
+-
+-  const handleSubmit = (e) => {
++  const handleSubmit = async (e) => {
+     if (e && e.preventDefault) e.preventDefault();
+     const trimmedEmail = email.trim().toLowerCase();
+ 
+@@ -38,26 +22,38 @@ export default function LoginScreen({ onLogin, onForgotPin }) {
+       setError("Please enter your email.");
+       return;
+     }
+-    if (pin.some((d) => d === "")) {
+-      setError("Please enter your 6-digit PIN.");
++    if (!password) {
++      setError("Please enter your password.");
+       return;
+     }
+ 
+-    const user = EMPLOYEES.find((emp) => emp.email.toLowerCase() === trimmedEmail);
+-    if (!user) {
+-      setError("Email is not registered.");
++    setError("");
++    setLoading(true);
++    const { user: authUser, error: authError } = await signInWithPassword(trimmedEmail, password);
++    setLoading(false);
++
++    if (authError) {
++      setError(authError);
+       return;
+     }
+ 
+-    const enteredPin = pin.join("");
+-    const validPin = AUTH_PINS[trimmedEmail] || DEFAULT_PIN;
+-    if (enteredPin !== validPin) {
+-      setError("Incorrect PIN.");
++    // Look up the profile from the real Supabase `employees` table first
++    // (source of truth once data has been seeded via seed-database.mjs or
++    // added manually). Falls back to the in-memory directory for employees
++    // that haven't been migrated yet.
++    let profile = await fetchEmployeeByAuthUserId(authUser.id);
++    if (!profile) profile = await fetchEmployeeByEmail(trimmedEmail);
++    if (!profile) {
++      const local = employees.find((emp) => emp.email.toLowerCase() === trimmedEmail);
++      if (local) profile = { ...local, authUserId: authUser.id };
++    }
++
++    if (!profile) {
++      setError("Signed in, but no matching employee profile was found. Contact an admin.");
+       return;
+     }
+ 
+-    setError("");
+-    onLogin(user);
++    onLogin({ ...profile, authUserId: profile.authUserId || authUser.id });
+   };
+ 
+   return (
+@@ -79,31 +75,39 @@ export default function LoginScreen({ onLogin, onForgotPin }) {
+           onKeyDown={(e) => {
+             if (e.key === "Enter") handleSubmit(e);
+           }}
++          autoComplete="email"
+         />
+       </div>
+ 
+-      <label className="login-field-label">PIN</label>
+-      <div className="login-pin-row">
+-        {pin.map((d, i) => (
+-          <input
+-            key={i}
+-            ref={(el) => (pinRefs.current[i] = el)}
+-            className="login-pin-box"
+-            type="password"
+-            inputMode="numeric"
+-            maxLength={1}
+-            value={d}
+-            onChange={(e) => handlePinChange(i, e.target.value)}
+-            onKeyDown={(e) => {
+-              handlePinKeyDown(i, e);
+-              if (e.key === "Enter") handleSubmit(e);
+-            }}
+-          />
+-        ))}
++      <label className="login-field-label">Password</label>
++      <div className="login-field-wrap">
++        <span className="login-field-icon">
++          <Icon name="lock" size={15} />
++        </span>
++        <input
++          className="login-field-input"
++          type={showPassword ? "text" : "password"}
++          placeholder="••••••••"
++          value={password}
++          onChange={(e) => setPassword(e.target.value)}
++          onKeyDown={(e) => {
++            if (e.key === "Enter") handleSubmit(e);
++          }}
++          autoComplete="current-password"
++        />
++        <button
++          type="button"
++          className="login-field-icon-btn"
++          onClick={() => setShowPassword((v) => !v)}
++          tabIndex={-1}
++          aria-label={showPassword ? "Hide password" : "Show password"}
++        >
++          <Icon name={showPassword ? "eye-off" : "eye"} size={15} />
++        </button>
+       </div>
+ 
+-      <button type="button" className="login-help-row login-help-btn" onClick={onForgotPin}>
+-        <Icon name="lock" size={12} /> Reset forgotten PIN / Need help?
++      <button type="button" className="login-help-row login-help-btn" onClick={onForgotPassword}>
++        <Icon name="lock" size={12} /> Forgot your password?
+       </button>
+ 
+       {error && (
+@@ -112,8 +116,8 @@ export default function LoginScreen({ onLogin, onForgotPin }) {
+         </div>
+       )}
+ 
+-      <button type="button" className="login-submit-btn" onClick={handleSubmit}>
+-        Sign in
++      <button type="button" className="login-submit-btn" onClick={handleSubmit} disabled={loading}>
++        {loading ? "Signing in…" : "Sign in"}
+       </button>
+ 
+       <div className="login-divider">
+diff --git a/src/components/auth/PinBoxes.jsx b/src/components/auth/PinBoxes.jsx
+deleted file mode 100644
+index 96ab75d..0000000
+--- a/src/components/auth/PinBoxes.jsx
++++ /dev/null
+@@ -1,30 +0,0 @@
+-// src/components/auth/PinBoxes.jsx
+-export default function PinBoxes({ values, onChangeAt, refsArr }) {
+-  const onChange = (i, val) => {
+-    if (!/^[0-9]?$/.test(val)) return;
+-    const next = [...values];
+-    next[i] = val;
+-    onChangeAt(next);
+-    if (val && i < 5) refsArr.current[i + 1]?.focus();
+-  };
+-  const onKeyDown = (i, e) => {
+-    if (e.key === "Backspace" && !values[i] && i > 0) refsArr.current[i - 1]?.focus();
+-  };
+-  return (
+-    <div className="login-pin-row">
+-      {values.map((d, i) => (
+-        <input
+-          key={i}
+-          ref={(el) => (refsArr.current[i] = el)}
+-          className="login-pin-box"
+-          type="password"
+-          inputMode="numeric"
+-          maxLength={1}
+-          value={d}
+-          onChange={(e) => onChange(i, e.target.value)}
+-          onKeyDown={(e) => onKeyDown(i, e)}
+-        />
+-      ))}
+-    </div>
+-  );
+-}
+diff --git a/src/components/auth/ResetPinForm.jsx b/src/components/auth/ResetPinForm.jsx
+deleted file mode 100644
+index 411bd8d..0000000
+--- a/src/components/auth/ResetPinForm.jsx
++++ /dev/null
+@@ -1,139 +0,0 @@
+-// src/components/auth/ResetPinForm.jsx
+-"use client";
+-import { useState, useRef } from "react";
+-import Icon from "@/lib/Icon";
+-import AuthShell from "./AuthShell";
+-import PinBoxes from "./PinBoxes";
+-import { EMPLOYEES } from "@/lib/vera/store";
+-
+-export default function ResetPinForm({ onBack }) {
+-  const [mode, setMode] = useState("email"); // "email" | "newpin" | "done"
+-  const [email, setEmail] = useState("");
+-  const [error, setError] = useState("");
+-  const [newPin, setNewPin] = useState(["", "", "", "", "", ""]);
+-  const [confirmPin, setConfirmPin] = useState(["", "", "", "", "", ""]);
+-  const newPinRefs = useRef([]);
+-  const confirmPinRefs = useRef([]);
+-
+-  const handleContinue = () => {
+-    const trimmed = email.trim().toLowerCase();
+-    if (!trimmed) {
+-      setError("Please enter your email.");
+-      return;
+-    }
+-    const user = EMPLOYEES.find((emp) => emp.email.toLowerCase() === trimmed);
+-    if (!user) {
+-      setError("Email is not registered.");
+-      return;
+-    }
+-    setError("");
+-    setMode("newpin");
+-  };
+-
+-  const handleResetSubmit = () => {
+-    if (newPin.some((d) => d === "") || confirmPin.some((d) => d === "")) {
+-      setError("Please fill in both PIN fields.");
+-      return;
+-    }
+-    if (newPin.join("") !== confirmPin.join("")) {
+-      setError("PINs do not match. Please try again.");
+-      return;
+-    }
+-    setError("");
+-    setMode("done");
+-  };
+-
+-  return (
+-    <AuthShell>
+-      {mode !== "done" && (
+-        <button
+-          type="button"
+-          className="login-back-btn"
+-          onClick={() => {
+-            setError("");
+-            if (mode === "newpin") setMode("email");
+-            else onBack();
+-          }}
+-        >
+-          <Icon name="arrow-left" size={14} /> Back
+-        </button>
+-      )}
+-
+-      {mode === "email" && (
+-        <>
+-          <div className="login-form-title">Reset your PIN</div>
+-          <div className="login-form-sub">Enter your registered email to continue.</div>
+-
+-          <label className="login-field-label">Email</label>
+-          <div className="login-field-wrap">
+-            <span className="login-field-icon">
+-              <Icon name="address-book" size={15} />
+-            </span>
+-            <input
+-              className="login-field-input"
+-              type="email"
+-              placeholder="you@vaulthos.com"
+-              value={email}
+-              onChange={(e) => setEmail(e.target.value)}
+-              onKeyDown={(e) => {
+-                if (e.key === "Enter") handleContinue();
+-              }}
+-            />
+-          </div>
+-
+-          {error && (
+-            <div className="form-error" style={{ marginBottom: 14 }}>
+-              {error}
+-            </div>
+-          )}
+-
+-          <button type="button" className="login-submit-btn" onClick={handleContinue}>
+-            Continue
+-          </button>
+-        </>
+-      )}
+-
+-      {mode === "newpin" && (
+-        <>
+-          <div className="login-form-title">Set a new PIN</div>
+-          <div className="login-form-sub">
+-            For <b>{email.trim().toLowerCase()}</b>
+-          </div>
+-
+-          <label className="login-field-label">New PIN</label>
+-          <PinBoxes values={newPin} onChangeAt={setNewPin} refsArr={newPinRefs} />
+-
+-          <label className="login-field-label">Confirm PIN</label>
+-          <PinBoxes values={confirmPin} onChangeAt={setConfirmPin} refsArr={confirmPinRefs} />
+-
+-          {error && (
+-            <div className="form-error" style={{ marginBottom: 14 }}>
+-              {error}
+-            </div>
+-          )}
+-
+-          <button type="button" className="login-submit-btn" onClick={handleResetSubmit}>
+-            Reset PIN
+-          </button>
+-        </>
+-      )}
+-
+-      {mode === "done" && (
+-        <div style={{ textAlign: "center", padding: "12px 0" }}>
+-          <div className="login-reset-success-icon">
+-            <Icon name="check" size={22} />
+-          </div>
+-          <div className="login-form-title" style={{ marginTop: 14 }}>
+-            PIN updated
+-          </div>
+-          <div className="login-form-sub" style={{ marginBottom: 24 }}>
+-            Your PIN has been reset. Please sign in with your new PIN.
+-          </div>
+-          <button type="button" className="login-submit-btn" onClick={onBack}>
+-            Back to Sign in
+-          </button>
+-        </div>
+-      )}
+-    </AuthShell>
+-  );
+-}
+diff --git a/src/components/layout/DashboardLayout.jsx b/src/components/layout/DashboardLayout.jsx
+index 630b596..bb7b370 100644
+--- a/src/components/layout/DashboardLayout.jsx
++++ b/src/components/layout/DashboardLayout.jsx
+@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation";
+ import Sidebar from "./Sidebar";
+ import Topbar from "./Topbar";
+ import { loadSession, clearSession } from "@/lib/session";
++import { signOut } from "@/lib/supabase/auth";
+ 
+ export default function DashboardLayout({ children }) {
+   const router = useRouter();
+   const [checked, setChecked] = useState(false);
++  const [user, setUser] = useState(null);
+ 
+   useEffect(() => {
+     const session = loadSession();
+@@ -16,11 +18,13 @@ export default function DashboardLayout({ children }) {
+       router.replace("/login");
+       return;
+     }
++    setUser(session.user || null);
+     setChecked(true);
+   }, [router]);
+ 
+-  function handleLogout() {
++  async function handleLogout() {
+     clearSession();
++    await signOut();
+     router.replace("/login");
+   }
+ 
+@@ -30,7 +34,7 @@ export default function DashboardLayout({ children }) {
+     <div className="app-shell">
+       <Sidebar />
+       <div className="main">
+-        <Topbar onLogout={handleLogout} />
++        <Topbar onLogout={handleLogout} user={user} />
+         <div className="content">{children}</div>
+       </div>
+     </div>
+diff --git a/src/components/layout/Topbar.jsx b/src/components/layout/Topbar.jsx
+index 735f643..2727ebf 100644
+--- a/src/components/layout/Topbar.jsx
++++ b/src/components/layout/Topbar.jsx
+@@ -10,12 +10,21 @@ function keyFromPathname(pathname) {
+   return entry ? entry[0] : "command";
+ }
+ 
+-export default function Topbar({ onLogout }) {
++function initials(name) {
++  if (!name) return "?";
++  const parts = name.trim().split(/\s+/);
++  return ((parts[0]?.[0] || "") + (parts[1]?.[0] || "")).toUpperCase() || name[0].toUpperCase();
++}
++
++export default function Topbar({ onLogout, user }) {
+   const pathname = usePathname();
+   const pageKey = keyFromPathname(pathname);
+   const [title, sub] = PAGE_TITLES[pageKey];
+   const [confirmOpen, setConfirmOpen] = useState(false);
+ 
++  const displayName = user?.name || "Unknown";
++  const displayRole = (user?.role || "user").toLowerCase();
++
+   return (
+     <div className="topbar">
+       <div>
+@@ -24,9 +33,9 @@ export default function Topbar({ onLogout }) {
+       </div>
+       <div className="user-badge">
+         <span style={{ fontSize: 13, color: "var(--text2)" }}>
+-          Vaulthos · <span className="badge gray">superadmin</span>
++          {displayName} · <span className="badge gray">{displayRole}</span>
+         </span>
+-        <div className="user-avatar">VH</div>
++        <div className="user-avatar">{initials(displayName)}</div>
+         <button className="logout-btn" title="Logout" onClick={() => setConfirmOpen(true)}>
+           <Icon name="logout" size={15} />
+         </button>
+diff --git a/src/components/tasks/TaskCreateModal.jsx b/src/components/tasks/TaskCreateModal.jsx
+index 07d2cd9..300023b 100644
+--- a/src/components/tasks/TaskCreateModal.jsx
++++ b/src/components/tasks/TaskCreateModal.jsx
+@@ -2,10 +2,10 @@
+ "use client";
+ import { useState } from "react";
+ import Icon from "@/lib/Icon";
+-import { TASK_PRIORITY_STYLES, CURRENT_USER_ID } from "@/lib/vera/taskUiHelpers";
++import { TASK_PRIORITY_STYLES } from "@/lib/vera/taskUiHelpers";
+ 
+-export default function TaskCreateModal({ onClose, onCreate, employees }) {
+-  const assignableUsers = employees.filter((e) => e.id !== CURRENT_USER_ID);
++export default function TaskCreateModal({ onClose, onCreate, employees, currentUserId }) {
++  const assignableUsers = employees.filter((e) => e.id !== currentUserId);
+   const [title, setTitle] = useState("");
+   const [description, setDescription] = useState("");
+   const [assignedTo, setAssignedTo] = useState(assignableUsers[0]?.id || "");
+diff --git a/src/components/tasks/TaskDetailView.jsx b/src/components/tasks/TaskDetailView.jsx
+index a9850e7..a367170 100644
+--- a/src/components/tasks/TaskDetailView.jsx
++++ b/src/components/tasks/TaskDetailView.jsx
+@@ -7,7 +7,7 @@ import ConfirmModal from "@/components/shared/ConfirmModal";
+ import TaskEditModal from "./TaskEditModal";
+ import TaskRefinePreviewModal from "./TaskRefinePreviewModal";
+ import TaskAiHistoryModal from "./TaskAiHistoryModal";
+-import { TASK_STATUS_STYLES, TASK_PRIORITY_STYLES, CURRENT_USER_ID, taskUserById, taskTimeAgo, formatTaskDate } from "@/lib/vera/taskUiHelpers";
++import { TASK_STATUS_STYLES, TASK_PRIORITY_STYLES, taskUserById, taskTimeAgo, formatTaskDate } from "@/lib/vera/taskUiHelpers";
+ 
+ async function refineText(text) {
+   const res = await fetch("/api/ai/refine", {
+@@ -29,7 +29,7 @@ async function moderateText(text) {
+   return res.json();
+ }
+ 
+-export default function TaskDetailView({ task, onBack, onUpdateTask, onEditTask, onChangeStatus, onSendChat, onDeleteTask, employees }) {
++export default function TaskDetailView({ task, onBack, onUpdateTask, onEditTask, onChangeStatus, onSendChat, onDeleteTask, employees, currentUserId }) {
+   const [description, setDescription] = useState(task.description);
+   const [refiningDesc, setRefiningDesc] = useState(false);
+   const [descError, setDescError] = useState(null);
+@@ -365,7 +365,7 @@ export default function TaskDetailView({ task, onBack, onUpdateTask, onEditTask,
+                 );
+               }
+               const sender = taskUserById(employees, chat.senderId);
+-              const isMine = chat.senderId === CURRENT_USER_ID;
++              const isMine = chat.senderId === currentUserId;
+               return (
+                 <div key={chat.id} className={`task-chat-row${isMine ? " mine" : ""}`}>
+                   <TaskAvatar name={sender.name} size={22} />
+@@ -445,6 +445,7 @@ export default function TaskDetailView({ task, onBack, onUpdateTask, onEditTask,
+         <TaskEditModal
+           task={task}
+           employees={employees}
++          currentUserId={currentUserId}
+           onClose={() => setShowEditModal(false)}
+           onSave={(patch) => {
+             onEditTask(patch);
+diff --git a/src/components/tasks/TaskEditModal.jsx b/src/components/tasks/TaskEditModal.jsx
+index 76e448f..ffe901e 100644
+--- a/src/components/tasks/TaskEditModal.jsx
++++ b/src/components/tasks/TaskEditModal.jsx
+@@ -2,11 +2,11 @@
+ "use client";
+ import { useState } from "react";
+ import Icon from "@/lib/Icon";
+-import { TASK_PRIORITY_STYLES, CURRENT_USER_ID } from "@/lib/vera/taskUiHelpers";
++import { TASK_PRIORITY_STYLES } from "@/lib/vera/taskUiHelpers";
+ 
+-export default function TaskEditModal({ task, onClose, onSave, employees }) {
+-  const assignableUsers = employees.filter((e) => e.id !== CURRENT_USER_ID);
+-  const canReassign = task.createdBy === CURRENT_USER_ID;
++export default function TaskEditModal({ task, onClose, onSave, employees, currentUserId }) {
++  const assignableUsers = employees.filter((e) => e.id !== currentUserId);
++  const canReassign = task.createdBy === currentUserId;
+   const [title, setTitle] = useState(task.title);
+   const [assignedTo, setAssignedTo] = useState(task.assignedTo);
+   const [priority, setPriority] = useState(task.priority);
+diff --git a/src/lib/Icon.jsx b/src/lib/Icon.jsx
+index 06677f6..4c4b1bd 100644
+--- a/src/lib/Icon.jsx
++++ b/src/lib/Icon.jsx
+@@ -70,6 +70,10 @@ function Icon({ name, size = 16, style }) {
+       return <svg {...common}><path d="M3 3v5h5" /><path d="M3.05 13A9 9 0 106 5.3L3 8" /><polyline points="12 7 12 12 15 15" /></svg>;
+     case "send":
+       return <svg {...common}><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>;
++    case "eye":
++      return <svg {...common}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>;
++    case "eye-off":
++      return <svg {...common}><path d="M17.94 17.94A10.94 10.94 0 0112 20c-7 0-11-8-11-8a20.3 20.3 0 015.06-6.06M9.9 4.24A10.94 10.94 0 0112 4c7 0 11 8 11 8a20.29 20.29 0 01-3.22 4.5" /><path d="M14.12 14.12a3 3 0 11-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>;
+     default:
+       return null;
+   }
+diff --git a/src/lib/supabase/auth.js b/src/lib/supabase/auth.js
+new file mode 100644
+index 0000000..6ded7cf
+--- /dev/null
++++ b/src/lib/supabase/auth.js
+@@ -0,0 +1,53 @@
++// src/lib/supabase/auth.js
++//
++// Thin wrappers around Supabase Auth calls used by the login / reset
++// password / logout UI. Kept in one place so error-message handling stays
++// consistent across the app.
++"use client";
++import { createClient } from "./client";
++
++export async function signInWithPassword(email, password) {
++  const supabase = createClient();
++  const { data, error } = await supabase.auth.signInWithPassword({
++    email: email.trim().toLowerCase(),
++    password,
++  });
++  if (error) return { user: null, error: mapAuthError(error) };
++  return { user: data.user, error: null };
++}
++
++export async function signOut() {
++  const supabase = createClient();
++  await supabase.auth.signOut();
++}
++
++export async function requestPasswordReset(email) {
++  const supabase = createClient();
++  const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/reset-password` : undefined;
++  const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo });
++  if (error) return { error: mapAuthError(error) };
++  return { error: null };
++}
++
++export async function updatePassword(newPassword) {
++  const supabase = createClient();
++  const { error } = await supabase.auth.updateUser({ password: newPassword });
++  if (error) return { error: mapAuthError(error) };
++  return { error: null };
++}
++
++export async function getCurrentUser() {
++  const supabase = createClient();
++  const {
++    data: { user },
++  } = await supabase.auth.getUser();
++  return user;
++}
++
++function mapAuthError(error) {
++  const msg = error?.message || "";
++  if (msg.includes("Invalid login credentials")) return "Email or password is incorrect.";
++  if (msg.includes("Email not confirmed")) return "Please confirm your email before signing in.";
++  if (msg.includes("For security purposes")) return "Too many attempts. Please wait a moment and try again.";
++  return msg || "Something went wrong. Please try again.";
++}
+diff --git a/src/lib/supabase/client.js b/src/lib/supabase/client.js
+new file mode 100644
+index 0000000..29ef2c6
+--- /dev/null
++++ b/src/lib/supabase/client.js
+@@ -0,0 +1,26 @@
++// src/lib/supabase/client.js
++//
++// Supabase client for the browser (Client Components). Uses the public
++// anon key — safe to expose, access is controlled by Row Level Security
++// policies on the database side (see supabase/vera_schema.sql; RLS is
++// still a TODO there — Fase 5).
++"use client";
++import { createBrowserClient } from "@supabase/ssr";
++
++let browserClient;
++
++export function createClient() {
++  if (browserClient) return browserClient;
++
++  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
++  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
++
++  if (!url || !anonKey) {
++    throw new Error(
++      "Missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY. Copy .env.local.example to .env.local and fill in your Supabase project values."
++    );
++  }
++
++  browserClient = createBrowserClient(url, anonKey);
++  return browserClient;
++}
+diff --git a/src/lib/supabase/currentUser.js b/src/lib/supabase/currentUser.js
+new file mode 100644
+index 0000000..59e1ced
+--- /dev/null
++++ b/src/lib/supabase/currentUser.js
+@@ -0,0 +1,28 @@
++// src/lib/supabase/currentUser.js
++//
++// Resolves the currently logged-in Supabase Auth user (from the request's
++// session cookie) to their employee record. Used by server-side task/meeting
++// mutations to record who actually performed an action, replacing the old
++// hardcoded CURRENT_USER_ID = "EMP-0001".
++import { createClient } from "./server";
++
++// Returns both the employees.id (uuid — needed for FK columns like
++// created_by/assigned_to/sender_id) and employee_code (the "EMP-0001"
++// style id the rest of the app displays), or null if not logged in / not
++// yet linked to an employee record.
++export async function getCurrentEmployee() {
++  const supabase = await createClient();
++  const {
++    data: { user },
++  } = await supabase.auth.getUser();
++  if (!user) return null;
++
++  const { data, error } = await supabase
++    .from("employees")
++    .select("id, employee_code, name, email")
++    .eq("auth_user_id", user.id)
++    .maybeSingle();
++
++  if (error || !data) return null;
++  return { uuid: data.id, id: data.employee_code, name: data.name, email: data.email };
++}
+diff --git a/src/lib/supabase/directory.js b/src/lib/supabase/directory.js
+new file mode 100644
+index 0000000..178a34c
+--- /dev/null
++++ b/src/lib/supabase/directory.js
+@@ -0,0 +1,237 @@
++// src/lib/supabase/directory.js
++//
++// Server-side data access for Employee Directory (employees, divisions,
++// branches), backed by the real Supabase tables. Function names/shapes
++// mirror src/lib/vera/store.js's in-memory equivalents so the API routes
++// under src/app/api/employees and src/app/api/settings can just swap the
++// import. Must only be called from server code (route handlers) — uses
++// the cookie-based server client, so it runs as the logged-in user and is
++// subject to RLS.
++import { createClient } from "./server";
++
++function mapEmployeeRow(row) {
++  return {
++    id: row.employee_code,
++    name: row.name,
++    email: row.email,
++    role: row.roles?.name || "User",
++    birthDate: row.birth_date || "",
++    division: row.divisions?.name || "",
++    branch: row.branches?.name || "",
++    joinDate: row.join_date || "",
++    phone: row.phone || "",
++    identityNumber: row.identity_number || "",
++    address: row.address || "",
++    authUserId: row.auth_user_id,
++  };
++}
++
++const EMPLOYEE_SELECT = `
++  employee_code, name, email, phone, identity_number, address,
++  birth_date, join_date, auth_user_id,
++  roles ( name ),
++  divisions ( name ),
++  branches ( name )
++`;
++
++async function nextEmployeeCode(supabase) {
++  const { data } = await supabase.from("employees").select("employee_code");
++  const nums = (data || [])
++    .map((e) => parseInt(String(e.employee_code).replace(/[^0-9]/g, ""), 10))
++    .filter((n) => !isNaN(n));
++  return `EMP-${String((nums.length ? Math.max(...nums) : 0) + 1).padStart(4, "0")}`;
++}
++
++async function resolveIdByName(supabase, table, name) {
++  if (!name) return null;
++  const { data } = await supabase.from(table).select("id").ilike("name", name).maybeSingle();
++  return data?.id || null;
++}
++
++// Roles are simple enough to auto-create on first use (unlike
++// divisions/branches, which are deliberately managed via Settings).
++async function resolveOrCreateRoleId(supabase, name) {
++  const roleName = name || "User";
++  const existing = await resolveIdByName(supabase, "roles", roleName);
++  if (existing) return existing;
++  const { data, error } = await supabase.from("roles").insert({ name: roleName }).select("id").single();
++  if (error) return null;
++  return data.id;
++}
++
++// ---------- Employees ----------
++export async function getEmployees({ search, division, branch } = {}) {
++  const supabase = await createClient();
++  let query = supabase.from("employees").select(EMPLOYEE_SELECT).order("employee_code");
++
++  if (search) {
++    query = query.or(`name.ilike.%${search}%,email.ilike.%${search}%,employee_code.ilike.%${search}%`);
++  }
++  const { data, error } = await query;
++  if (error) {
++    console.error("getEmployees:", error.message);
++    return [];
++  }
++  let rows = (data || []).map(mapEmployeeRow);
++  if (division) rows = rows.filter((e) => e.division.toLowerCase() === division.toLowerCase());
++  if (branch) rows = rows.filter((e) => e.branch.toLowerCase() === branch.toLowerCase());
++  return rows;
++}
++
++export async function createEmployee(input) {
++  const supabase = await createClient();
++
++  const { data: existing } = await supabase
++    .from("employees")
++    .select("id")
++    .ilike("email", input.email)
++    .maybeSingle();
++  if (existing) {
++    return { success: false, error: `An employee with email ${input.email} already exists.` };
++  }
++
++  const [divisionId, branchId, roleId, employeeCode] = await Promise.all([
++    resolveIdByName(supabase, "divisions", input.division),
++    resolveIdByName(supabase, "branches", input.branch),
++    resolveOrCreateRoleId(supabase, input.role),
++    input.id ? Promise.resolve(input.id) : nextEmployeeCode(supabase),
++  ]);
++
++  if (input.division && !divisionId) {
++    return { success: false, error: `Division "${input.division}" doesn't exist. Add it in Settings first.` };
++  }
++  if (input.branch && !branchId) {
++    return { success: false, error: `Branch "${input.branch}" doesn't exist. Add it in Settings first.` };
++  }
++
++  const { data, error } = await supabase
++    .from("employees")
++    .insert({
++      employee_code: employeeCode,
++      name: input.name,
++      email: input.email,
++      role_id: roleId,
++      birth_date: input.birthDate || null,
++      division_id: divisionId,
++      branch_id: branchId,
++      join_date: input.joinDate || new Date().toISOString().slice(0, 10),
++      phone: input.phone || null,
++      identity_number: input.identityNumber || null,
++      address: input.address || null,
++    })
++    .select(EMPLOYEE_SELECT)
++    .single();
++
++  if (error) return { success: false, error: error.message };
++  return { success: true, employee: mapEmployeeRow(data) };
++}
++
++export async function updateEmployee(id, patch) {
++  const supabase = await createClient();
++
++  const update = {};
++  if (patch.name !== undefined) update.name = patch.name;
++  if (patch.email !== undefined) update.email = patch.email;
++  if (patch.birthDate !== undefined) update.birth_date = patch.birthDate || null;
++  if (patch.joinDate !== undefined) update.join_date = patch.joinDate || null;
++  if (patch.phone !== undefined) update.phone = patch.phone || null;
++  if (patch.identityNumber !== undefined) update.identity_number = patch.identityNumber || null;
++  if (patch.address !== undefined) update.address = patch.address || null;
++  if (patch.role !== undefined) update.role_id = await resolveOrCreateRoleId(supabase, patch.role);
++  if (patch.division !== undefined) update.division_id = await resolveIdByName(supabase, "divisions", patch.division);
++  if (patch.branch !== undefined) update.branch_id = await resolveIdByName(supabase, "branches", patch.branch);
++
++  const { data, error } = await supabase
++    .from("employees")
++    .update(update)
++    .eq("employee_code", id)
++    .select(EMPLOYEE_SELECT)
++    .maybeSingle();
++
++  if (error) return { success: false, error: error.message };
++  if (!data) return { success: false, error: `No employee found with ID ${id}.` };
++  return { success: true, employee: mapEmployeeRow(data) };
++}
++
++export async function deleteEmployee(id) {
++  const supabase = await createClient();
++  const { error, count } = await supabase.from("employees").delete({ count: "exact" }).eq("employee_code", id);
++  if (error) return { success: false, error: error.message };
++  return { success: (count ?? 0) > 0 };
++}
++
++// ---------- Divisions ----------
++export async function getDivisions() {
++  const supabase = await createClient();
++  const { data, error } = await supabase.from("divisions").select("name").order("name");
++  if (error) {
++    console.error("getDivisions:", error.message);
++    return [];
++  }
++  return (data || []).map((d) => d.name);
++}
++
++export async function addDivision(name) {
++  const supabase = await createClient();
++  const { error } = await supabase.from("divisions").insert({ name });
++  if (error) {
++    if (error.code === "23505") return { success: false, error: `Division "${name}" already exists.` };
++    return { success: false, error: error.message };
++  }
++  return { success: true, division: name };
++}
++
++export async function deleteDivision(name) {
++  const supabase = await createClient();
++  const { error } = await supabase.from("divisions").delete().eq("name", name);
++  if (error) return { success: false, error: error.message };
++  return { success: true };
++}
++
++export async function renameDivision(oldName, newName) {
++  const supabase = await createClient();
++  const { error } = await supabase.from("divisions").update({ name: newName }).eq("name", oldName);
++  if (error) {
++    if (error.code === "23505") return { success: false, error: `Division "${newName}" already exists.` };
++    return { success: false, error: error.message };
++  }
++  return { success: true };
++}
++
++// ---------- Branches ----------
++export async function getBranches() {
++  const supabase = await createClient();
++  const { data, error } = await supabase.from("branches").select("name").order("name");
++  if (error) {
++    console.error("getBranches:", error.message);
++    return [];
++  }
++  return (data || []).map((b) => b.name);
++}
++
++export async function addBranch(name) {
++  const supabase = await createClient();
++  const { error } = await supabase.from("branches").insert({ name });
++  if (error) {
++    if (error.code === "23505") return { success: false, error: `Branch "${name}" already exists.` };
++    return { success: false, error: error.message };
++  }
++  return { success: true, branch: name };
++}
++
++export async function deleteBranch(name) {
++  const supabase = await createClient();
++  const { error } = await supabase.from("branches").delete().eq("name", name);
++  if (error) return { success: false, error: error.message };
++  return { success: true };
++}
++
++export async function renameBranch(oldName, newName) {
++  const supabase = await createClient();
++  const { error } = await supabase.from("branches").update({ name: newName }).eq("name", oldName);
++  if (error) {
++    if (error.code === "23505") return { success: false, error: `Branch "${newName}" already exists.` };
++    return { success: false, error: error.message };
++  }
++  return { success: true };
++}
+diff --git a/src/lib/supabase/employees.js b/src/lib/supabase/employees.js
+new file mode 100644
+index 0000000..da0aa75
+--- /dev/null
++++ b/src/lib/supabase/employees.js
+@@ -0,0 +1,62 @@
++// src/lib/supabase/employees.js
++//
++// Looks up an employee profile from the real Supabase `employees` table
++// (joined with roles/divisions/branches for display names), matching the
++// shape the rest of the app expects from src/lib/vera/store.js's in-memory
++// employees array. This is the Supabase-backed replacement for the login
++// bridge — once Fase 4 fully migrates the app off the in-memory store,
++// this becomes the single source of truth everywhere, not just login.
++"use client";
++import { createClient } from "./client";
++
++const SELECT = `
++  employee_code, name, email, phone, identity_number, address,
++  birth_date, join_date, auth_user_id,
++  roles ( name ),
++  divisions ( name ),
++  branches ( name )
++`;
++
++function mapRow(row) {
++  if (!row) return null;
++  return {
++    id: row.employee_code,
++    name: row.name,
++    email: row.email,
++    role: row.roles?.name || "User",
++    division: row.divisions?.name || "-",
++    branch: row.branches?.name || "-",
++    birthDate: row.birth_date,
++    joinDate: row.join_date,
++    phone: row.phone,
++    identityNumber: row.identity_number,
++    address: row.address,
++    authUserId: row.auth_user_id,
++  };
++}
++
++// Preferred lookup — unambiguous, works even if someone changes their email.
++export async function fetchEmployeeByAuthUserId(authUserId) {
++  const supabase = createClient();
++  const { data, error } = await supabase.from("employees").select(SELECT).eq("auth_user_id", authUserId).maybeSingle();
++  if (error) {
++    console.error("fetchEmployeeByAuthUserId:", error.message);
++    return null;
++  }
++  return mapRow(data);
++}
++
++// Fallback — useful right after seeding, before auth_user_id is linked.
++export async function fetchEmployeeByEmail(email) {
++  const supabase = createClient();
++  const { data, error } = await supabase
++    .from("employees")
++    .select(SELECT)
++    .eq("email", email.trim().toLowerCase())
++    .maybeSingle();
++  if (error) {
++    console.error("fetchEmployeeByEmail:", error.message);
++    return null;
++  }
++  return mapRow(data);
++}
+diff --git a/src/lib/supabase/meetings.js b/src/lib/supabase/meetings.js
+new file mode 100644
+index 0000000..162c6d6
+--- /dev/null
++++ b/src/lib/supabase/meetings.js
+@@ -0,0 +1,144 @@
++// src/lib/supabase/meetings.js
++import { createClient } from "./server";
++import { getCurrentEmployee } from "./currentUser";
++
++const MEETING_SELECT = `
++  meeting_code, title, date, time, location, description,
++  meeting_attendees ( employees ( employee_code ) )
++`;
++
++function mapMeetingRow(row) {
++  return {
++    id: row.meeting_code,
++    title: row.title,
++    date: row.date,
++    time: (row.time || "").slice(0, 5), // "10:00:00" -> "10:00"
++    location: row.location || "",
++    description: row.description || "",
++    attendeeIds: (row.meeting_attendees || []).map((a) => a.employees?.employee_code).filter(Boolean),
++  };
++}
++
++async function nextMeetingCode(supabase) {
++  const { data } = await supabase.from("meetings").select("meeting_code");
++  const nums = (data || [])
++    .map((m) => parseInt(String(m.meeting_code).replace(/[^0-9]/g, ""), 10))
++    .filter((n) => !isNaN(n));
++  return `MTG-${String((nums.length ? Math.max(...nums) : 0) + 1).padStart(2, "0")}`;
++}
++
++async function resolveEmployeeUuids(supabase, employeeCodes) {
++  if (!employeeCodes?.length) return [];
++  const { data } = await supabase.from("employees").select("id, employee_code").in("employee_code", employeeCodes);
++  return (data || []).map((e) => e.id);
++}
++
++export async function getMeetings({ date, search } = {}) {
++  const supabase = await createClient();
++  let query = supabase.from("meetings").select(MEETING_SELECT).order("date").order("time");
++  if (date) query = query.eq("date", date);
++  if (search) query = query.or(`title.ilike.%${search}%,location.ilike.%${search}%`);
++
++  const { data, error } = await query;
++  if (error) {
++    console.error("getMeetings:", error.message);
++    return [];
++  }
++  return (data || []).map(mapMeetingRow);
++}
++
++export async function createMeeting(input) {
++  const supabase = await createClient();
++
++  const { data: sameSlot } = await supabase
++    .from("meetings")
++    .select("title, time, location")
++    .eq("date", input.date)
++    .eq("time", input.time);
++  const conflicts = sameSlot || [];
++
++  let attendeeCodes = input.attendeeIds || [];
++  if (!attendeeCodes.length && input.attendeeNames?.length) {
++    const { data: allEmployees } = await supabase.from("employees").select("employee_code, name");
++    attendeeCodes = input.attendeeNames
++      .map((n) => (allEmployees || []).find((e) => e.name.toLowerCase().includes(n.toLowerCase())))
++      .filter(Boolean)
++      .map((e) => e.employee_code);
++  }
++
++  const current = await getCurrentEmployee();
++  const meetingCode = await nextMeetingCode(supabase);
++
++  const { data: inserted, error } = await supabase
++    .from("meetings")
++    .insert({
++      meeting_code: meetingCode,
++      title: input.title,
++      date: input.date,
++      time: input.time,
++      location: input.location || null,
++      description: input.description || null,
++      created_by: current?.uuid || null,
++    })
++    .select("id")
++    .single();
++
++  if (error) return { success: false, error: error.message };
++
++  const attendeeUuids = await resolveEmployeeUuids(supabase, attendeeCodes);
++  if (attendeeUuids.length) {
++    await supabase
++      .from("meeting_attendees")
++      .insert(attendeeUuids.map((employee_id) => ({ meeting_id: inserted.id, employee_id })));
++  }
++
++  const { data: full } = await supabase.from("meetings").select(MEETING_SELECT).eq("id", inserted.id).single();
++
++  return {
++    success: true,
++    meeting: mapMeetingRow(full),
++    schedule_conflict: conflicts.length > 0,
++    conflicting_meetings: conflicts.map((m) => ({ title: m.title, time: (m.time || "").slice(0, 5), location: m.location })),
++  };
++}
++
++export async function updateMeeting(id, patch) {
++  const supabase = await createClient();
++
++  const update = {};
++  if (patch.title !== undefined) update.title = patch.title;
++  if (patch.date !== undefined) update.date = patch.date;
++  if (patch.time !== undefined) update.time = patch.time;
++  if (patch.location !== undefined) update.location = patch.location || null;
++  if (patch.description !== undefined) update.description = patch.description || null;
++
++  const { data: meetingRow, error } = await supabase
++    .from("meetings")
++    .update(update)
++    .eq("meeting_code", id)
++    .select("id")
++    .maybeSingle();
++
++  if (error) return { success: false, error: error.message };
++  if (!meetingRow) return { success: false, error: `No meeting found with ID ${id}.` };
++
++  if (patch.attendeeIds !== undefined) {
++    await supabase.from("meeting_attendees").delete().eq("meeting_id", meetingRow.id);
++    const attendeeUuids = await resolveEmployeeUuids(supabase, patch.attendeeIds);
++    if (attendeeUuids.length) {
++      await supabase
++        .from("meeting_attendees")
++        .insert(attendeeUuids.map((employee_id) => ({ meeting_id: meetingRow.id, employee_id })));
++    }
++  }
++
++  const { data: full } = await supabase.from("meetings").select(MEETING_SELECT).eq("id", meetingRow.id).single();
++  return { success: true, meeting: mapMeetingRow(full) };
++}
++
++export async function deleteMeeting(id) {
++  const supabase = await createClient();
++  const { error, count } = await supabase.from("meetings").delete({ count: "exact" }).eq("meeting_code", id);
++  if (error) return { success: false, error: error.message };
++  return { success: (count ?? 0) > 0 };
++}
+diff --git a/src/lib/supabase/middleware.js b/src/lib/supabase/middleware.js
+new file mode 100644
+index 0000000..8efbe7b
+--- /dev/null
++++ b/src/lib/supabase/middleware.js
+@@ -0,0 +1,56 @@
++// src/lib/supabase/middleware.js
++//
++// Refreshes the Supabase auth token on every request and redirects
++// unauthenticated users away from protected routes. Called from the root
++// middleware.js (Next.js only picks up middleware.js at the project root).
++import { createServerClient } from "@supabase/ssr";
++import { NextResponse } from "next/server";
++
++const PUBLIC_PATHS = ["/login", "/reset-password"];
++
++export async function updateSession(request) {
++  let response = NextResponse.next({ request });
++
++  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
++  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
++
++  // If env vars aren't set yet, don't crash every request — just pass
++  // through so the app still boots and shows a clear error where it's used.
++  if (!url || !anonKey) return response;
++
++  const supabase = createServerClient(url, anonKey, {
++    cookies: {
++      getAll() {
++        return request.cookies.getAll();
++      },
++      setAll(cookiesToSet) {
++        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
++        response = NextResponse.next({ request });
++        cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
++      },
++    },
++  });
++
++  // IMPORTANT: do not run any code between createServerClient and
++  // getUser() — it revalidates the token against Supabase Auth.
++  const {
++    data: { user },
++  } = await supabase.auth.getUser();
++
++  const path = request.nextUrl.pathname;
++  const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));
++
++  if (!user && !isPublic && path !== "/") {
++    const loginUrl = request.nextUrl.clone();
++    loginUrl.pathname = "/login";
++    return NextResponse.redirect(loginUrl);
++  }
++
++  if (user && path === "/login") {
++    const dashUrl = request.nextUrl.clone();
++    dashUrl.pathname = "/vera";
++    return NextResponse.redirect(dashUrl);
++  }
++
++  return response;
++}
+diff --git a/src/lib/supabase/notifications.js b/src/lib/supabase/notifications.js
+new file mode 100644
+index 0000000..4abbc04
+--- /dev/null
++++ b/src/lib/supabase/notifications.js
+@@ -0,0 +1,67 @@
++// src/lib/supabase/notifications.js
++//
++// Unlike the old in-memory version (one global list), task_notifications
++// has a required recipient_id — notifications are per-person. Each
++// logged-in user only sees their own.
++import { createClient } from "./server";
++import { getCurrentEmployee } from "./currentUser";
++
++function mapRow(row) {
++  return {
++    id: row.id,
++    taskId: row.task_id,
++    message: row.message,
++    isRead: row.is_read,
++    createdAt: new Date(row.created_at).getTime(),
++  };
++}
++
++export async function getNotifications() {
++  const supabase = await createClient();
++  const current = await getCurrentEmployee();
++  if (!current) return [];
++
++  const { data, error } = await supabase
++    .from("task_notifications")
++    .select("id, task_id, message, is_read, created_at")
++    .eq("recipient_id", current.uuid)
++    .order("created_at", { ascending: false });
++
++  if (error) {
++    console.error("getNotifications:", error.message);
++    return [];
++  }
++  return (data || []).map(mapRow);
++}
++
++export async function markAllNotificationsRead() {
++  const supabase = await createClient();
++  const current = await getCurrentEmployee();
++  if (!current) return [];
++
++  await supabase.from("task_notifications").update({ is_read: true }).eq("recipient_id", current.uuid);
++  return getNotifications();
++}
++
++export async function markNotificationRead(id) {
++  const supabase = await createClient();
++  await supabase.from("task_notifications").update({ is_read: true }).eq("id", id);
++  return getNotifications();
++}
++
++// Notifies everyone involved with a task (creator + assignee), skipping
++// whoever just performed the action (they don't need to be told about
++// their own change).
++export async function notifyTaskParticipants(supabase, taskUuid, message, excludeEmployeeUuid) {
++  const { data: task } = await supabase.from("tasks").select("created_by, assigned_to").eq("id", taskUuid).single();
++  if (!task) return;
++
++  const recipients = [...new Set([task.created_by, task.assigned_to].filter(Boolean))].filter(
++    (id) => id !== excludeEmployeeUuid
++  );
++  if (!recipients.length) return;
++
++  await supabase
++    .from("task_notifications")
++    .insert(recipients.map((recipient_id) => ({ task_id: taskUuid, recipient_id, message })));
++}
+diff --git a/src/lib/supabase/server.js b/src/lib/supabase/server.js
+new file mode 100644
+index 0000000..8ee0313
+--- /dev/null
++++ b/src/lib/supabase/server.js
+@@ -0,0 +1,37 @@
++// src/lib/supabase/server.js
++//
++// Supabase client for Server Components, Route Handlers, and Server Actions.
++// Reads/writes the auth session via Next.js cookies so the session survives
++// server-side navigation and API calls. Must be created fresh per request
++// (cannot be module-level singleton like the browser client).
++import { createServerClient } from "@supabase/ssr";
++import { cookies } from "next/headers";
++
++export async function createClient() {
++  const cookieStore = await cookies();
++
++  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
++  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
++
++  if (!url || !anonKey) {
++    throw new Error(
++      "Missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY. Copy .env.local.example to .env.local and fill in your Supabase project values."
++    );
++  }
++
++  return createServerClient(url, anonKey, {
++    cookies: {
++      getAll() {
++        return cookieStore.getAll();
++      },
++      setAll(cookiesToSet) {
++        try {
++          cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
++        } catch {
++          // Called from a Server Component that can't set cookies — safe to
++          // ignore as long as middleware.js is refreshing the session.
++        }
++      },
++    },
++  });
++}
+diff --git a/src/lib/supabase/tasks.js b/src/lib/supabase/tasks.js
+new file mode 100644
+index 0000000..8da855c
+--- /dev/null
++++ b/src/lib/supabase/tasks.js
+@@ -0,0 +1,289 @@
++// src/lib/supabase/tasks.js
++import { createClient } from "./server";
++import { getCurrentEmployee } from "./currentUser";
++import { notifyTaskParticipants } from "./notifications";
++
++const TASK_FIELDS = `
++  id, task_code, title, description, status, priority, due_date,
++  ai_summary, ai_summary_generated_at, ai_summary_generate_count,
++  ai_issue_analysis, ai_issue_analysis_generated_at, ai_issue_analysis_generate_count,
++  created_by:employees!tasks_created_by_fkey ( id, employee_code, name ),
++  assigned_to:employees!tasks_assigned_to_fkey ( id, employee_code, name )
++`;
++
++function mapTaskRow(row, { chats = [], auditLog = [] } = {}) {
++  return {
++    id: row.task_code,
++    title: row.title,
++    description: row.description || "",
++    createdBy: row.created_by?.employee_code || null,
++    assignedTo: row.assigned_to?.employee_code || null,
++    status: row.status,
++    priority: row.priority,
++    dueDate: row.due_date ? new Date(row.due_date).getTime() : null,
++    aiSummary: row.ai_summary || null,
++    aiSummaryGeneratedAt: row.ai_summary_generated_at ? new Date(row.ai_summary_generated_at).getTime() : null,
++    aiSummaryGenerateCount: row.ai_summary_generate_count || 0,
++    aiIssueAnalysis: row.ai_issue_analysis || null,
++    aiIssueAnalysisGeneratedAt: row.ai_issue_analysis_generated_at
++      ? new Date(row.ai_issue_analysis_generated_at).getTime()
++      : null,
++    aiIssueAnalysisGenerateCount: row.ai_issue_analysis_generate_count || 0,
++    chats,
++    auditLog,
++    // internal, not part of the original in-memory shape — used by route
++    // handlers that need the uuid without a second lookup.
++    _uuid: row.id,
++  };
++}
++
++function mapChatRow(row) {
++  return {
++    id: row.id,
++    senderId: row.employees?.employee_code || null,
++    senderName: row.employees?.name || null,
++    message: row.message || "",
++    attachment: row.attachment_path
++      ? { name: row.attachment_name, dataUrl: row.attachment_path, isImage: /\.(png|jpe?g|gif|webp)$/i.test(row.attachment_name || "") }
++      : null,
++    isSystem: row.is_system,
++    action: row.action || null,
++    createdAt: new Date(row.created_at).getTime(),
++  };
++}
++
++function mapAuditRow(row) {
++  return {
++    id: row.id,
++    action: row.action,
++    byUserId: row.employees?.employee_code || null,
++    detail: row.detail || "",
++    createdAt: new Date(row.created_at).getTime(),
++  };
++}
++
++async function nextTaskCode(supabase) {
++  const { data } = await supabase.from("tasks").select("task_code");
++  const nums = (data || [])
++    .map((t) => parseInt(String(t.task_code).replace(/[^0-9]/g, ""), 10))
++    .filter((n) => !isNaN(n));
++  return `TSK-${String((nums.length ? Math.max(...nums) : 0) + 1).padStart(4, "0")}`;
++}
++
++async function fetchChats(supabase, taskUuid) {
++  const { data, error } = await supabase
++    .from("task_chats")
++    .select("id, message, attachment_path, attachment_name, is_system, action, created_at, employees ( employee_code, name )")
++    .eq("task_id", taskUuid)
++    .order("created_at", { ascending: true });
++  if (error) {
++    console.error("fetchChats:", error.message);
++    return [];
++  }
++  return (data || []).map(mapChatRow);
++}
++
++async function fetchAuditLog(supabase, taskUuid) {
++  const { data, error } = await supabase
++    .from("task_audit_log")
++    .select("id, action, detail, created_at, employees ( employee_code )")
++    .eq("task_id", taskUuid)
++    .order("created_at", { ascending: false });
++  if (error) {
++    console.error("fetchAuditLog:", error.message);
++    return [];
++  }
++  return (data || []).map(mapAuditRow);
++}
++
++// ---------- Reads ----------
++export async function getTasks() {
++  const supabase = await createClient();
++  const { data, error } = await supabase
++    .from("tasks")
++    .select(`${TASK_FIELDS}, task_chats ( id, is_system )`)
++    .order("created_at", { ascending: false });
++
++  if (error) {
++    console.error("getTasks:", error.message);
++    return [];
++  }
++  return (data || []).map((row) =>
++    mapTaskRow(row, {
++      chats: (row.task_chats || []).map((c) => ({ id: c.id, isSystem: c.is_system })),
++    })
++  );
++}
++
++export async function getTaskById(id) {
++  const supabase = await createClient();
++  const { data: row, error } = await supabase.from("tasks").select(TASK_FIELDS).eq("task_code", id).maybeSingle();
++  if (error || !row) return null;
++
++  const [chats, auditLog] = await Promise.all([fetchChats(supabase, row.id), fetchAuditLog(supabase, row.id)]);
++  return mapTaskRow(row, { chats, auditLog });
++}
++
++// ---------- Writes ----------
++export async function createTask(input) {
++  const supabase = await createClient();
++
++  const { data: assignee } = await supabase
++    .from("employees")
++    .select("id, employee_code, name")
++    .eq("employee_code", input.assignedTo)
++    .maybeSingle();
++  if (!assignee) {
++    return { success: false, error: `No employee found with ID ${input.assignedTo}.` };
++  }
++
++  const current = await getCurrentEmployee();
++  const taskCode = await nextTaskCode(supabase);
++
++  const { data: inserted, error } = await supabase
++    .from("tasks")
++    .insert({
++      task_code: taskCode,
++      title: input.title,
++      description: input.description || null,
++      created_by: current?.uuid || null,
++      assigned_to: assignee.id,
++      status: "open",
++      priority: input.priority || "medium",
++      due_date: input.dueDate ? new Date(input.dueDate).toISOString() : null,
++    })
++    .select("id")
++    .single();
++
++  if (error) return { success: false, error: error.message };
++
++  await supabase.from("task_audit_log").insert({
++    task_id: inserted.id,
++    action: "created",
++    by_user_id: current?.uuid || null,
++    detail: "Task created",
++  });
++
++  await notifyTaskParticipants(supabase, inserted.id, `Task "${input.title}" created and assigned to ${assignee.name}`, current?.uuid);
++
++  return {
++    success: true,
++    task: { id: taskCode, title: input.title, assignedTo: assignee.name, priority: input.priority || "medium", dueDate: input.dueDate || null },
++  };
++}
++
++export async function updateTask(id, patch) {
++  const supabase = await createClient();
++
++  const { data: taskRow } = await supabase.from("tasks").select("id").eq("task_code", id).maybeSingle();
++  if (!taskRow) return { success: false, error: `No task found with ID ${id}.` };
++
++  const update = {};
++  if (patch.title !== undefined) update.title = patch.title;
++  if (patch.description !== undefined) update.description = patch.description || null;
++  if (patch.priority !== undefined) update.priority = patch.priority;
++  if (patch.dueDate !== undefined) update.due_date = patch.dueDate ? new Date(patch.dueDate).toISOString() : null;
++  if (patch.aiSummary !== undefined) update.ai_summary = patch.aiSummary;
++  if (patch.aiSummaryGeneratedAt !== undefined)
++    update.ai_summary_generated_at = patch.aiSummaryGeneratedAt ? new Date(patch.aiSummaryGeneratedAt).toISOString() : null;
++  if (patch.aiSummaryGenerateCount !== undefined) update.ai_summary_generate_count = patch.aiSummaryGenerateCount;
++  if (patch.aiIssueAnalysis !== undefined) update.ai_issue_analysis = patch.aiIssueAnalysis;
++  if (patch.aiIssueAnalysisGeneratedAt !== undefined)
++    update.ai_issue_analysis_generated_at = patch.aiIssueAnalysisGeneratedAt
++      ? new Date(patch.aiIssueAnalysisGeneratedAt).toISOString()
++      : null;
++  if (patch.aiIssueAnalysisGenerateCount !== undefined) update.ai_issue_analysis_generate_count = patch.aiIssueAnalysisGenerateCount;
++
++  if (patch.assignedTo !== undefined) {
++    const { data: assignee } = await supabase.from("employees").select("id").eq("employee_code", patch.assignedTo).maybeSingle();
++    if (!assignee) return { success: false, error: `No employee found with ID ${patch.assignedTo}.` };
++    update.assigned_to = assignee.id;
++  }
++
++  const { error } = await supabase.from("tasks").update(update).eq("id", taskRow.id);
++  if (error) return { success: false, error: error.message };
++
++  const { data: full } = await supabase.from("tasks").select(TASK_FIELDS).eq("id", taskRow.id).single();
++  const [chats, auditLog] = await Promise.all([fetchChats(supabase, taskRow.id), fetchAuditLog(supabase, taskRow.id)]);
++  return { success: true, task: mapTaskRow(full, { chats, auditLog }) };
++}
++
++export async function deleteTask(id) {
++  const supabase = await createClient();
++  const { error, count } = await supabase.from("tasks").delete({ count: "exact" }).eq("task_code", id);
++  if (error) return { success: false, error: error.message };
++  return { success: (count ?? 0) > 0 };
++}
++
++export async function pushTaskAudit(taskCode, action, detail) {
++  const supabase = await createClient();
++  const current = await getCurrentEmployee();
++  const { data: taskRow } = await supabase.from("tasks").select("id").eq("task_code", taskCode).maybeSingle();
++  if (!taskRow) return;
++  await supabase
++    .from("task_audit_log")
++    .insert({ task_id: taskRow.id, action, by_user_id: current?.uuid || null, detail });
++}
++
++export async function addTaskChat(taskCode, message, attachment) {
++  const supabase = await createClient();
++  const current = await getCurrentEmployee();
++  if (!current) return { success: false, error: "Not signed in." };
++
++  const { data: taskRow } = await supabase.from("tasks").select("id, title").eq("task_code", taskCode).maybeSingle();
++  if (!taskRow) return { success: false, error: "Task not found." };
++
++  const { data: chatRow, error } = await supabase
++    .from("task_chats")
++    .insert({
++      task_id: taskRow.id,
++      sender_id: current.uuid,
++      message,
++      attachment_path: attachment?.dataUrl || null,
++      attachment_name: attachment?.name || null,
++      is_system: false,
++    })
++    .select("id, message, attachment_path, attachment_name, is_system, action, created_at")
++    .single();
++
++  if (error) return { success: false, error: error.message };
++
++  await notifyTaskParticipants(supabase, taskRow.id, `New message on "${taskRow.title}"`, current.uuid);
++
++  return { success: true, chat: { ...mapChatRow(chatRow), senderId: current.id, senderName: current.name } };
++}
++
++export async function changeTaskStatus(taskCode, newStatus) {
++  const supabase = await createClient();
++  const current = await getCurrentEmployee();
++
++  const { data: taskRow } = await supabase.from("tasks").select("id, title, status").eq("task_code", taskCode).maybeSingle();
++  if (!taskRow) return { success: false, error: "Task not found." };
++
++  if (taskRow.status === newStatus) {
++    const { data: full } = await supabase.from("tasks").select(TASK_FIELDS).eq("id", taskRow.id).single();
++    const [chats, auditLog] = await Promise.all([fetchChats(supabase, taskRow.id), fetchAuditLog(supabase, taskRow.id)]);
++    return { success: true, task: mapTaskRow(full, { chats, auditLog }) };
++  }
++
++  const oldLabel = taskRow.status;
++  await supabase.from("tasks").update({ status: newStatus }).eq("id", taskRow.id);
++  await supabase.from("task_audit_log").insert({
++    task_id: taskRow.id,
++    action: "status_changed",
++    by_user_id: current?.uuid || null,
++    detail: `Status changed from "${oldLabel}" to "${newStatus}"`,
++  });
++  await supabase.from("task_chats").insert({
++    task_id: taskRow.id,
++    sender_id: null,
++    message: `Moved to "${newStatus}"`,
++    is_system: true,
++    action: "status_changed",
++  });
++  await notifyTaskParticipants(supabase, taskRow.id, `Status of "${taskRow.title}" changed to ${newStatus}`, current?.uuid);
++
++  const { data: full } = await supabase.from("tasks").select(TASK_FIELDS).eq("id", taskRow.id).single();
++  const [chats, auditLog] = await Promise.all([fetchChats(supabase, taskRow.id), fetchAuditLog(supabase, taskRow.id)]);
++  return { success: true, task: mapTaskRow(full, { chats, auditLog }) };
++}
+diff --git a/src/lib/vera/executeTool.js b/src/lib/vera/executeTool.js
+index d002239..1beb828 100644
+--- a/src/lib/vera/executeTool.js
++++ b/src/lib/vera/executeTool.js
+@@ -1,17 +1,16 @@
+ // src/lib/vera/executeTool.js
++import { getMeetings, createMeeting } from "@/lib/supabase/meetings";
++import { createTask } from "@/lib/supabase/tasks";
+ import {
+   getEmployees,
+   createEmployee,
+-  getMeetings,
+-  createMeeting,
+-  createTask,
+   addDivision,
+   addBranch,
+-} from "./store";
++} from "@/lib/supabase/directory";
+ 
+ export async function executeVeraTool(name, input) {
+   if (name === "get_employees") {
+-    const results = getEmployees(input);
++    const results = await getEmployees(input);
+     return {
+       total_matches: results.length,
+       results: results.slice(0, 25).map((e) => ({
+@@ -24,11 +23,11 @@ export async function executeVeraTool(name, input) {
+     if (!input.name || !input.email || !input.division || !input.branch) {
+       return { success: false, error: "Missing required fields (name, email, division, branch)." };
+     }
+-    return createEmployee(input);
++    return await createEmployee(input);
+   }
+ 
+   if (name === "get_meetings") {
+-    const results = getMeetings(input);
++    const results = await getMeetings(input);
+     return {
+       total_matches: results.length,
+       results: results.slice(0, 25).map((m) => ({ id: m.id, title: m.title, date: m.date, time: m.time, location: m.location })),
+@@ -39,24 +38,24 @@ export async function executeVeraTool(name, input) {
+     if (!input.title || !input.date || !input.time) {
+       return { success: false, error: "Missing required fields (title, date, time)." };
+     }
+-    return createMeeting(input);
++    return await createMeeting(input);
+   }
+ 
+   if (name === "create_task") {
+     if (!input.title || !input.assignedTo) {
+       return { success: false, error: "Missing required fields (title, assignedTo)." };
+     }
+-    return createTask(input);
++    return await createTask(input);
+   }
+ 
+   if (name === "add_division") {
+     if (!input.name?.trim()) return { success: false, error: "Division name is required." };
+-    return addDivision(input.name.trim());
++    return await addDivision(input.name.trim());
+   }
+ 
+   if (name === "add_branch") {
+     if (!input.name?.trim()) return { success: false, error: "Branch name is required." };
+-    return addBranch(input.name.trim());
++    return await addBranch(input.name.trim());
+   }
+ 
+   if (name === "logout") {
+diff --git a/src/lib/vera/taskUiHelpers.js b/src/lib/vera/taskUiHelpers.js
+index 5b856ca..c0aaead 100644
+--- a/src/lib/vera/taskUiHelpers.js
++++ b/src/lib/vera/taskUiHelpers.js
+@@ -12,8 +12,6 @@ export const TASK_PRIORITY_STYLES = {
+   high: { label: "High", badge: "red" },
+ };
+ 
+-export const CURRENT_USER_ID = "EMP-0001";
+-
+ export function taskUserById(employees, id) {
+   return employees.find((e) => e.id === id) || { id, name: "Unknown", division: "-" };
+ }
+diff --git a/supabase/rls_policies_dev.sql b/supabase/rls_policies_dev.sql
+new file mode 100644
+index 0000000..462db5e
+--- /dev/null
++++ b/supabase/rls_policies_dev.sql
+@@ -0,0 +1,36 @@
++-- =====================================================================
++-- V.E.R.A — Temporary DEV RLS policies
++-- =====================================================================
++-- RLS is already enabled on these tables (either from the dashboard or a
++-- prior run), but with zero policies — which means Postgres denies ALL
++-- access by default, including to the app itself via the anon key +
++-- logged-in user session. That's what was blocking login just now.
++--
++-- This grants any authenticated (logged-in) user full read/write access to
++-- every table, just to unblock development.
++--
++-- !! MUST be replaced with real per-role policies before production !!
++-- (this is Fase 5 in the migration roadmap — e.g. only Superadmin can
++-- write to `roles`/`divisions`/`branches`, employees can only see their
++-- own `vera_conversations`, etc.)
++-- =====================================================================
++
++do $$
++declare t text;
++begin
++  for t in
++    select unnest(array[
++      'divisions', 'branches', 'roles', 'employees',
++      'meetings', 'meeting_attendees',
++      'tasks', 'task_chats', 'task_audit_log', 'task_notifications',
++      'integration_settings', 'vera_conversations'
++    ])
++  loop
++    execute format('alter table %I enable row level security', t);
++    execute format('drop policy if exists "dev: authenticated full access" on %I', t);
++    execute format(
++      'create policy "dev: authenticated full access" on %I for all to authenticated using (true) with check (true)',
++      t
++    );
++  end loop;
++end $$;

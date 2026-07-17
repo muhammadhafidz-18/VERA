@@ -10,11 +10,20 @@ function keyFromPathname(pathname) {
   return entry ? entry[0] : "command";
 }
 
-export default function Topbar({ onLogout }) {
+function initials(name) {
+  if (!name) return "?";
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] || "") + (parts[1]?.[0] || "")).toUpperCase() || name[0].toUpperCase();
+}
+
+export default function Topbar({ onLogout, user }) {
   const pathname = usePathname();
   const pageKey = keyFromPathname(pathname);
   const [title, sub] = PAGE_TITLES[pageKey];
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const displayName = user?.name || "Unknown";
+  const displayRole = (user?.role || "user").toLowerCase();
 
   return (
     <div className="topbar">
@@ -24,9 +33,9 @@ export default function Topbar({ onLogout }) {
       </div>
       <div className="user-badge">
         <span style={{ fontSize: 13, color: "var(--text2)" }}>
-          Vaulthos · <span className="badge gray">superadmin</span>
+          {displayName} · <span className="badge gray">{displayRole}</span>
         </span>
-        <div className="user-avatar">VH</div>
+        <div className="user-avatar">{initials(displayName)}</div>
         <button className="logout-btn" title="Logout" onClick={() => setConfirmOpen(true)}>
           <Icon name="logout" size={15} />
         </button>

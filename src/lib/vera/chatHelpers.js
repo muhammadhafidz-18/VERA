@@ -1,7 +1,11 @@
 // src/lib/vera/chatHelpers.js
 
 export const VERA_CHAT_HISTORY_KEY = "vera_chat_history_v2";
-export const VERA_DEFAULT_GREETING = "Hi Vaulthos! How can I help you today?";
+
+export function getVeraGreeting(userName) {
+  const firstName = (userName || "").trim().split(/\s+/)[0] || "there";
+  return `Hi ${firstName}! How can I help you today?`;
+}
 
 export function loadVeraChatHistory() {
   try {
