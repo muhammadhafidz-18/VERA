@@ -10,7 +10,6 @@ export default function VeraFloatingChat({ onLogout }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
-  // Jangan tampilkan tombol di halaman Ask V.E.R.A sendiri (sudah full page).
   if (pathname === PAGE_PATHS.command) return null;
 
   return (
@@ -31,13 +30,17 @@ export default function VeraFloatingChat({ onLogout }) {
         </div>
       )}
 
-      <button
-        className="vera-float-btn"
-        onClick={() => setOpen((v) => !v)}
-        title={open ? "Tutup Ask V.E.R.A" : "Ask V.E.R.A"}
-      >
-        <Icon name={open ? "x" : "message-chatbot"} size={20} />
-      </button>
+      {/* Hanya tampilkan tombol mengambang saat panel TERTUTUP,
+          supaya tidak menumpuk di atas input/mic saat panel terbuka */}
+      {!open && (
+        <button
+          className="vera-float-btn"
+          onClick={() => setOpen(true)}
+          title="Ask V.E.R.A"
+        >
+          <Icon name="message-chatbot" size={20} />
+        </button>
+      )}
     </>
   );
 }
