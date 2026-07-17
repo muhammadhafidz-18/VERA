@@ -17,7 +17,8 @@ import {
   COMMAND_SUGGESTIONS,
 } from "@/lib/vera/chatHelpers";
 
-export default function VeraChat({ onLogout }) {
+// ganti signature function-nya:
+export default function VeraChat({ onLogout, compact = false }) {
   const greeting = getVeraGreeting(loadSession()?.user?.name);
   const [messages, setMessages] = useState(() => loadVeraChatHistory() || [{ role: "assistant", text: greeting }]);
   const [input, setInput] = useState("");
@@ -179,9 +180,18 @@ export default function VeraChat({ onLogout }) {
 
   const isEmpty = messages.length <= 1;
 
-  return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 105px)", maxWidth: 720, width: "100%", margin: "0 auto" }}>
-      <div className="vera-hero">
+ return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: compact ? "100%" : "calc(100vh - 105px)",
+        maxWidth: compact ? "100%" : 720,
+        width: "100%",
+        margin: compact ? 0 : "0 auto",
+      }}
+    >
+      <div className={`vera-hero${compact ? " compact" : ""}`}>
         <div className="vera-hero-icon-badge">
           <Icon name="message-chatbot" size={17} style={{ color: "#fff" }} />
         </div>
@@ -197,7 +207,7 @@ export default function VeraChat({ onLogout }) {
         </span>
       </div>
 
-      {isEmpty && (
+      {isEmpty && !compact && (
         <div className="suggestion-panel">
           <div className="suggestion-grid">
             {COMMAND_SUGGESTIONS.map((s, i) => (
