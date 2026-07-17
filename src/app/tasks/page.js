@@ -1,26 +1,22 @@
 // src/app/tasks/page.js
 "use client";
-import { useState, useEffect, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import Icon from "@/lib/Icon";
 import TaskIndex from "@/components/tasks/TaskIndex";
 import TaskDetailView from "@/components/tasks/TaskDetailView";
 import TaskCreateModal from "@/components/tasks/TaskCreateModal";
-import { loadSession } from "@/lib/session";
 
-function TasksPageInner() {
+export default function TasksPage() {
+  const searchParams = useSearchParams();
   const [tasks, setTasks] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [currentUserId] = useState(() => loadSession()?.user?.id || null);
 
   const [view, setView] = useState("index");
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
-
-  const searchParams = useSearchParams();
-  const router = useRouter();
 
   useEffect(() => {
     async function load() {
@@ -35,15 +31,16 @@ function TasksPageInner() {
     load();
   }, []);
 
-  // Kalau datang dari notifikasi (Topbar -> /tasks?open=TSK-0001), langsung buka task-nya.
+  // If we arrived here from a notification click (?openTask=TSK-xxxx), jump
+  // straight into that task's detail view once the task list has loaded.
   useEffect(() => {
-    const openId = searchParams.get("open");
-    if (openId && tasks.some((t) => t.id === openId)) {
-      openTask(openId);
-      router.replace("/tasks");
+    if (loading) return;
+    const openTaskId = searchParams.get("openTask");
+    if (openTaskId && tasks.some((t) => t.id === openTaskId)) {
+      openTask(openTaskId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, searchParams]);
+  }, [loading]);
 
   const selectedTask = tasks.find((t) => t.id === selectedTaskId);
 
@@ -64,7 +61,9 @@ function TasksPageInner() {
       body: JSON.stringify({ status: newStatus }),
     });
     const data = await res.json();
-    if (data.success) setTasks((prev) => prev.map((t) => (t.id === task.id ? data.task : t)));
+    if (data.success) {
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? data.task : t)));
+    }
   }
 
   async function handleEditTask(task, patch) {
@@ -74,7 +73,9 @@ function TasksPageInner() {
       body: JSON.stringify(patch),
     });
     const data = await res.json();
-    if (data.success) setTasks((prev) => prev.map((t) => (t.id === task.id ? data.task : t)));
+    if (data.success) {
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? data.task : t)));
+    }
   }
 
   async function handleSendChat(taskId, message, attachment) {
@@ -142,7 +143,6 @@ function TasksPageInner() {
           <TaskDetailView
             task={selectedTask}
             employees={employees}
-            currentUserId={currentUserId}
             onBack={() => setView("index")}
             onUpdateTask={(patch) => updateTask(selectedTask.id, patch)}
             onEditTask={(patch) => handleEditTask(selectedTask, patch)}
@@ -152,19 +152,8 @@ function TasksPageInner() {
           />
         )}
 
-        {showCreateModal && (
-          <TaskCreateModal onClose={() => setShowCreateModal(false)} onCreate={handleCreateTask} employees={employees} currentUserId={currentUserId} />
-        )}
+        {showCreateModal && <TaskCreateModal onClose={() => setShowCreateModal(false)} onCreate={handleCreateTask} employees={employees} />}
       </div>
     </DashboardLayout>
-  );
-}
-
-export default function TasksPage() {
-  // useSearchParams butuh Suspense boundary di App Router.
-  return (
-    <Suspense fallback={null}>
-      <TasksPageInner />
-    </Suspense>
   );
 }
