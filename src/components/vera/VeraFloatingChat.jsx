@@ -20,9 +20,6 @@ export default function VeraFloatingChat({ onLogout }) {
             <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <Icon name="message-chatbot" size={14} /> Ask V.E.R.A
             </span>
-            <button className="btn-icon" onClick={() => setOpen(false)}>
-              <Icon name="x" size={14} />
-            </button>
           </div>
           <div className="vera-float-panel-body">
             <VeraChat compact onLogout={onLogout} />
@@ -30,17 +27,13 @@ export default function VeraFloatingChat({ onLogout }) {
         </div>
       )}
 
-      {/* Hanya tampilkan tombol mengambang saat panel TERTUTUP,
-          supaya tidak menumpuk di atas input/mic saat panel terbuka */}
-      {!open && (
-        <button
-          className="vera-float-btn"
-          onClick={() => setOpen(true)}
-          title="Ask V.E.R.A"
-        >
-          <Icon name="message-chatbot" size={20} />
-        </button>
-      )}
+      <button
+        className="vera-float-btn"
+        onClick={() => setOpen((v) => !v)}
+        title={open ? "Tutup Ask V.E.R.A" : "Ask V.E.R.A"}
+      >
+        <Icon name={open ? "x" : "message-chatbot"} size={20} />
+      </button>
     </>
   );
 }
