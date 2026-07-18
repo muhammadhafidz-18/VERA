@@ -22,18 +22,21 @@ export async function PUT(request, { params }) {
   if (body.description !== undefined && body.description !== task.description) changes.push(`description updated`);
 
   const result = await updateTask(id, body);
+  if (!result.success) {
+    return NextResponse.json(result, { status: result.forbidden ? 403 : 400 });
+  }
+
   if (changes.length) await pushTaskAudit(id, "edited", changes.join("; "));
 
-  if (result.success) {
-    const refreshed = await getTaskById(id);
-    return NextResponse.json({ success: true, task: refreshed });
-  }
-  return NextResponse.json(result);
+  const refreshed = await getTaskById(id);
+  return NextResponse.json({ success: true, task: refreshed });
 }
 
 export async function DELETE(request, { params }) {
   const { id } = await params;
   const result = await deleteTask(id);
-  if (!result.success) return NextResponse.json({ error: "Task not found." }, { status: 404 });
+  if (!result.success) {
+    return NextResponse.json(result, { status: result.forbidden ? 403 : 400 });
+  }
   return NextResponse.json(result);
 }

@@ -96,9 +96,19 @@ async function fetchAuditLog(supabase, taskUuid) {
   return (data || []).map(mapAuditRow);
 }
 
+// A task's two "owners": whoever created it and whoever it's assigned to.
+// Mirrors the ownership check pattern used in src/lib/supabase/meetings.js.
+function isTaskParticipant(taskRow, current) {
+  if (!current) return false;
+  return taskRow.created_by === current.uuid || taskRow.assigned_to === current.uuid;
+}
+
 // ---------- Reads ----------
 export async function getTasks() {
   const supabase = await createClient();
+  const current = await getCurrentEmployee();
+  if (!current) return [];
+
   const { data, error } = await supabase
     .from("tasks")
     .select(`${TASK_FIELDS}, task_chats ( id, is_system )`)
@@ -108,11 +118,22 @@ export async function getTasks() {
     console.error("getTasks:", error.message);
     return [];
   }
-  return (data || []).map((row) =>
+
+  const mapped = (data || []).map((row) =>
     mapTaskRow(row, {
       chats: (row.task_chats || []).map((c) => ({ id: c.id, isSystem: c.is_system })),
     })
   );
+
+  // Mirrors getMeetings(): only tasks the logged-in user is actually
+  // involved in — either they created it, or it's assigned to them.
+  // Filtered in JS (not via a query-level .or()) since created_by/
+  // assigned_to are also used as embedded-resource aliases in TASK_FIELDS;
+  // filtering post-fetch avoids any ambiguity with PostgREST there.
+  // Without this, every authenticated user could see every task in the
+  // company regardless of division, which isn't the intended directory
+  // model (task list is per-person, not a global feed).
+  return mapped.filter((t) => t.createdBy === current.id || t.assignedTo === current.id);
 }
 
 export async function getTaskById(id) {
@@ -174,9 +195,27 @@ export async function createTask(input) {
 
 export async function updateTask(id, patch) {
   const supabase = await createClient();
+  const current = await getCurrentEmployee();
 
-  const { data: taskRow } = await supabase.from("tasks").select("id").eq("task_code", id).maybeSingle();
+  const { data: taskRow, error: findError } = await supabase
+    .from("tasks")
+    .select("id, created_by, assigned_to")
+    .eq("task_code", id)
+    .maybeSingle();
+
+  if (findError) return { success: false, error: findError.message };
   if (!taskRow) return { success: false, error: `No task found with ID ${id}.` };
+
+  // Only the creator or the assignee may touch this task at all.
+  if (!isTaskParticipant(taskRow, current)) {
+    return { success: false, error: "You don't have access to edit this task.", forbidden: true };
+  }
+
+  // Reassigning (changing who the task belongs to) is creator-only — mirrors
+  // TaskEditModal's canReassign = task.createdBy === currentUserId on the client.
+  if (patch.assignedTo !== undefined && taskRow.created_by !== current?.uuid) {
+    return { success: false, error: "Only the task creator can reassign this task.", forbidden: true };
+  }
 
   const update = {};
   if (patch.title !== undefined) update.title = patch.title;
@@ -210,7 +249,32 @@ export async function updateTask(id, patch) {
 
 export async function deleteTask(id) {
   const supabase = await createClient();
-  const { error, count } = await supabase.from("tasks").delete({ count: "exact" }).eq("task_code", id);
+  const current = await getCurrentEmployee();
+
+  const { data: taskRow, error: findError } = await supabase
+    .from("tasks")
+    .select("id, created_by, status, task_chats ( id, is_system )")
+    .eq("task_code", id)
+    .maybeSingle();
+
+  if (findError) return { success: false, error: findError.message };
+  if (!taskRow) return { success: false, error: "Task not found." };
+
+  // Only the creator may delete a task — mirrors deleteMeeting's ownership check.
+  if (taskRow.created_by && current && taskRow.created_by !== current.uuid) {
+    return { success: false, error: "Only the task creator can delete this task.", forbidden: true };
+  }
+
+  // Same rule TaskIndex.jsx already enforces client-side (canDelete): only
+  // deletable while still open and before any real conversation has started.
+  // Enforced here too, since the client-side check alone can be bypassed by
+  // calling the API directly.
+  const hasRealChats = (taskRow.task_chats || []).some((c) => !c.is_system);
+  if (taskRow.status !== "open" || hasRealChats) {
+    return { success: false, error: "This task can no longer be deleted (it's in progress or already has messages)." };
+  }
+
+  const { error, count } = await supabase.from("tasks").delete({ count: "exact" }).eq("id", taskRow.id);
   if (error) return { success: false, error: error.message };
   return { success: (count ?? 0) > 0 };
 }
@@ -230,8 +294,17 @@ export async function addTaskChat(taskCode, message, attachment) {
   const current = await getCurrentEmployee();
   if (!current) return { success: false, error: "Not signed in." };
 
-  const { data: taskRow } = await supabase.from("tasks").select("id, title").eq("task_code", taskCode).maybeSingle();
+  const { data: taskRow } = await supabase
+    .from("tasks")
+    .select("id, title, created_by, assigned_to")
+    .eq("task_code", taskCode)
+    .maybeSingle();
   if (!taskRow) return { success: false, error: "Task not found." };
+
+  // Only the creator or assignee can post messages on this task.
+  if (!isTaskParticipant(taskRow, current)) {
+    return { success: false, error: "You don't have access to this task.", forbidden: true };
+  }
 
   const { data: chatRow, error } = await supabase
     .from("task_chats")
@@ -257,8 +330,17 @@ export async function changeTaskStatus(taskCode, newStatus) {
   const supabase = await createClient();
   const current = await getCurrentEmployee();
 
-  const { data: taskRow } = await supabase.from("tasks").select("id, title, status").eq("task_code", taskCode).maybeSingle();
+  const { data: taskRow } = await supabase
+    .from("tasks")
+    .select("id, title, status, created_by, assigned_to")
+    .eq("task_code", taskCode)
+    .maybeSingle();
   if (!taskRow) return { success: false, error: "Task not found." };
+
+  // Only the creator or assignee can move a task's status.
+  if (!isTaskParticipant(taskRow, current)) {
+    return { success: false, error: "You don't have access to this task.", forbidden: true };
+  }
 
   if (taskRow.status === newStatus) {
     const { data: full } = await supabase.from("tasks").select(TASK_FIELDS).eq("id", taskRow.id).single();

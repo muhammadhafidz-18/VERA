@@ -22,6 +22,8 @@ export async function POST(request, { params }) {
   }
 
   const result = await addTaskChat(id, finalMessage, attachment);
-  if (!result.success) return NextResponse.json({ error: result.error }, { status: 404 });
+  if (!result.success) {
+    return NextResponse.json(result, { status: result.forbidden ? 403 : 404 });
+  }
   return NextResponse.json({ ...result, moderated });
 }
