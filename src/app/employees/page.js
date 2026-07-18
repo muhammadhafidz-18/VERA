@@ -191,7 +191,6 @@ export default function EmployeesPage() {
                 <th>Employee ID</th>
                 <th>Name</th>
                 <th>Email</th>
-                <th>Role</th>
                 <th>Branch</th>
                 <th>Division</th>
                 <th>Join Date</th>
@@ -202,7 +201,7 @@ export default function EmployeesPage() {
             <tbody>
               {paged.length === 0 && (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: "center", padding: "32px 16px", color: "var(--text3)" }}>
+                  <td colSpan={8} style={{ textAlign: "center", padding: "32px 16px", color: "var(--text3)" }}>
                     <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.4 }}>&#9900;</div>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>No Data Available</div>
                   </td>
@@ -213,9 +212,6 @@ export default function EmployeesPage() {
                   <td className="mono">{e.id}</td>
                   <td style={{ fontWeight: 500 }}>{e.name}</td>
                   <td className="mono">{e.email}</td>
-                  <td>
-                    <span className={`badge ${e.role === "Superadmin" ? "purple" : "gray"}`}>{e.role}</span>
-                  </td>
                   <td>{e.branch}</td>
                   <td>{e.division}</td>
                   <td className="mono">{e.joinDate}</td>
