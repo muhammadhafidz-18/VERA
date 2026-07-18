@@ -16,6 +16,7 @@ export default function MeetingsPage() {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentUserId] = useState(() => loadSession()?.user?.id || null);
+  const [onlyMine, setOnlyMine] = useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [defaultDate, setDefaultDate] = useState("");
@@ -26,17 +27,17 @@ export default function MeetingsPage() {
   const [confirmDeleteMeeting, setConfirmDeleteMeeting] = useState(null);
 
   useEffect(() => {
-    async function load() {
-      const [mRes, eRes] = await Promise.all([
-        fetch("/api/meetings").then((r) => r.json()),
-        fetch("/api/employees").then((r) => r.json()),
-      ]);
-      setMeetings(mRes.meetings || []);
-      setEmployees(eRes.employees || []);
-      setLoading(false);
-    }
-    load();
-  }, []);
+  async function load() {
+    const [mRes, eRes] = await Promise.all([
+      fetch("/api/meetings").then((r) => r.json()),
+      fetch("/api/employees").then((r) => r.json()),
+    ]);
+    setMeetings(mRes.meetings || []);
+    setEmployees(eRes.employees || []);
+    setLoading(false);
+  }
+  load();
+}, []);
 
   const todayIso = isoDate(new Date());
   const upcoming = meetings.filter((m) => m && m.date >= todayIso).length;

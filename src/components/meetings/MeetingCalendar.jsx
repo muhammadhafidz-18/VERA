@@ -68,7 +68,7 @@ export default function MeetingCalendar({ meetings, onDayClick, onEventClick }) 
                       title={`${m.title} — ${m.time} — ${m.location || "-"}${m.createdByName ? ` — by ${m.createdByName}` : ""}`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        onEventClick(m);
+                        onDayClick(iso);   // ganti dari onEventClick(m) jadi ini
                       }}
                     >
                       <b style={{ color: col }}>{m.time}</b> {m.title}

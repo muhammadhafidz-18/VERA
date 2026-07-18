@@ -38,6 +38,9 @@ async function resolveEmployeeUuids(supabase, employeeCodes) {
 
 export async function getMeetings({ date, search } = {}) {
   const supabase = await createClient();
+  const current = await getCurrentEmployee();
+  if (!current) return [];
+
   let query = supabase.from("meetings").select(MEETING_SELECT).order("date").order("time");
   if (date) query = query.eq("date", date);
   if (search) query = query.or(`title.ilike.%${search}%,location.ilike.%${search}%`);
@@ -47,7 +50,10 @@ export async function getMeetings({ date, search } = {}) {
     console.error("getMeetings:", error.message);
     return [];
   }
-  return (data || []).map(mapMeetingRow);
+
+  return (data || [])
+    .map(mapMeetingRow)
+    .filter((m) => m.createdBy === current.id || m.attendeeIds.includes(current.id));
 }
 
 export async function createMeeting(input) {
