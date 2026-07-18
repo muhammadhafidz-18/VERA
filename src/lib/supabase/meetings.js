@@ -4,6 +4,7 @@ import { getCurrentEmployee } from "./currentUser";
 
 const MEETING_SELECT = `
   meeting_code, title, date, time, location, description,
+  created_by:employees!meetings_created_by_fkey ( employee_code, name ),
   meeting_attendees ( employees ( employee_code ) )
 `;
 
@@ -15,6 +16,8 @@ function mapMeetingRow(row) {
     time: (row.time || "").slice(0, 5), // "10:00:00" -> "10:00"
     location: row.location || "",
     description: row.description || "",
+    createdBy: row.created_by?.employee_code || null,
+    createdByName: row.created_by?.name || null,
     attendeeIds: (row.meeting_attendees || []).map((a) => a.employees?.employee_code).filter(Boolean),
   };
 }
@@ -104,6 +107,23 @@ export async function createMeeting(input) {
 
 export async function updateMeeting(id, patch) {
   const supabase = await createClient();
+  const current = await getCurrentEmployee();
+
+  const { data: meetingRow, error: findError } = await supabase
+    .from("meetings")
+    .select("id, created_by")
+    .eq("meeting_code", id)
+    .maybeSingle();
+
+  if (findError) return { success: false, error: findError.message };
+  if (!meetingRow) return { success: false, error: `No meeting found with ID ${id}.` };
+
+  // Meetings created before this feature shipped have created_by = null —
+  // treat those as unowned/editable by anyone. Otherwise, only the creator
+  // can edit.
+  if (meetingRow.created_by && current && meetingRow.created_by !== current.uuid) {
+    return { success: false, error: "Only the meeting creator can edit this meeting.", forbidden: true };
+  }
 
   const update = {};
   if (patch.title !== undefined) update.title = patch.title;
@@ -112,15 +132,8 @@ export async function updateMeeting(id, patch) {
   if (patch.location !== undefined) update.location = patch.location || null;
   if (patch.description !== undefined) update.description = patch.description || null;
 
-  const { data: meetingRow, error } = await supabase
-    .from("meetings")
-    .update(update)
-    .eq("meeting_code", id)
-    .select("id")
-    .maybeSingle();
-
-  if (error) return { success: false, error: error.message };
-  if (!meetingRow) return { success: false, error: `No meeting found with ID ${id}.` };
+  const { error: updateError } = await supabase.from("meetings").update(update).eq("id", meetingRow.id);
+  if (updateError) return { success: false, error: updateError.message };
 
   if (patch.attendeeIds !== undefined) {
     await supabase.from("meeting_attendees").delete().eq("meeting_id", meetingRow.id);
@@ -138,7 +151,22 @@ export async function updateMeeting(id, patch) {
 
 export async function deleteMeeting(id) {
   const supabase = await createClient();
-  const { error, count } = await supabase.from("meetings").delete({ count: "exact" }).eq("meeting_code", id);
+  const current = await getCurrentEmployee();
+
+  const { data: meetingRow, error: findError } = await supabase
+    .from("meetings")
+    .select("id, created_by")
+    .eq("meeting_code", id)
+    .maybeSingle();
+
+  if (findError) return { success: false, error: findError.message };
+  if (!meetingRow) return { success: false, error: "Meeting not found." };
+
+  if (meetingRow.created_by && current && meetingRow.created_by !== current.uuid) {
+    return { success: false, error: "Only the meeting creator can delete this meeting.", forbidden: true };
+  }
+
+  const { error } = await supabase.from("meetings").delete().eq("id", meetingRow.id);
   if (error) return { success: false, error: error.message };
-  return { success: (count ?? 0) > 0 };
+  return { success: true };
 }

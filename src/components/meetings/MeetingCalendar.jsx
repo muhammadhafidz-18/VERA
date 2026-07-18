@@ -65,7 +65,7 @@ export default function MeetingCalendar({ meetings, onDayClick, onEventClick }) 
                       key={m.id}
                       className="cal-event"
                       style={{ background: col + "1a", borderLeft: `3px solid ${col}` }}
-                      title={`${m.title} — ${m.time} — ${m.location}`}
+                      title={`${m.title} — ${m.time} — ${m.location || "-"}${m.createdByName ? ` — by ${m.createdByName}` : ""}`}
                       onClick={(e) => {
                         e.stopPropagation();
                         onEventClick(m);

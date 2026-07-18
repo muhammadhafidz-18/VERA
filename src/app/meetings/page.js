@@ -5,15 +5,25 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import Icon from "@/lib/Icon";
 import MeetingCalendar from "@/components/meetings/MeetingCalendar";
 import MeetingFormModal from "@/components/meetings/MeetingFormModal";
+import MeetingConflictModal from "@/components/meetings/MeetingConflictModal";
+import MeetingDayListModal from "@/components/meetings/MeetingDayListModal";
+import ConfirmModal from "@/components/shared/ConfirmModal";
 import { isoDate } from "@/lib/vera/meetingHelpers";
+import { loadSession } from "@/lib/session";
 
 export default function MeetingsPage() {
   const [meetings, setMeetings] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [currentUserId] = useState(() => loadSession()?.user?.id || null);
+
   const [modalOpen, setModalOpen] = useState(false);
   const [defaultDate, setDefaultDate] = useState("");
   const [editingMeeting, setEditingMeeting] = useState(null);
+  const [conflictInfo, setConflictInfo] = useState(null);
+
+  const [dayListDate, setDayListDate] = useState(null);
+  const [confirmDeleteMeeting, setConfirmDeleteMeeting] = useState(null);
 
   useEffect(() => {
     async function load() {
@@ -29,7 +39,8 @@ export default function MeetingsPage() {
   }, []);
 
   const todayIso = isoDate(new Date());
-  const upcoming = meetings.filter((m) => m.date >= todayIso).length;
+  const upcoming = meetings.filter((m) => m && m.date >= todayIso).length;
+  const meetingsForDay = dayListDate ? meetings.filter((m) => m.date === dayListDate) : [];
 
   const handleSave = async (form) => {
     if (editingMeeting) {
@@ -39,8 +50,8 @@ export default function MeetingsPage() {
         body: JSON.stringify(form),
       });
       const data = await res.json();
-      if (!res.ok) {
-        alert(data.error);
+      if (!res.ok || !data.success) {
+        alert(data.error || "Failed to save meeting.");
         return;
       }
       setMeetings((list) => list.map((m) => (m.id === editingMeeting.id ? data.meeting : m)));
@@ -51,15 +62,30 @@ export default function MeetingsPage() {
         body: JSON.stringify(form),
       });
       const data = await res.json();
-      if (!res.ok) {
-        alert(data.error);
+      if (!res.ok || !data.success) {
+        alert(data.error || "Failed to save meeting.");
         return;
       }
       setMeetings((list) => [...list, data.meeting]);
+
+      if (data.schedule_conflict && data.conflicting_meetings?.length) {
+        setConflictInfo({ meeting: data.meeting, conflicts: data.conflicting_meetings });
+      }
     }
     setModalOpen(false);
     setEditingMeeting(null);
   };
+
+  async function handleDeleteMeeting(meeting) {
+    const res = await fetch(`/api/meetings/${encodeURIComponent(meeting.id)}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      setMeetings((list) => list.filter((m) => m.id !== meeting.id));
+    } else {
+      alert(data.error || "Failed to delete meeting.");
+    }
+    setConfirmDeleteMeeting(null);
+  }
 
   if (loading) {
     return (
@@ -101,27 +127,62 @@ export default function MeetingsPage() {
 
         <MeetingCalendar
           meetings={meetings}
-          onDayClick={(iso) => {
-            setEditingMeeting(null);
-            setDefaultDate(iso);
-            setModalOpen(true);
-          }}
+          onDayClick={(iso) => setDayListDate(iso)}
           onEventClick={(meeting) => {
             setEditingMeeting(meeting);
             setModalOpen(true);
           }}
         />
 
+        {dayListDate && (
+          <MeetingDayListModal
+            date={dayListDate}
+            meetings={meetingsForDay}
+            currentUserId={currentUserId}
+            onClose={() => setDayListDate(null)}
+            onSelectMeeting={(m) => {
+              setEditingMeeting(m);
+              setDayListDate(null);
+              setModalOpen(true);
+            }}
+            onDeleteMeeting={(m) => setConfirmDeleteMeeting(m)}
+            onAddMeeting={() => {
+              setDefaultDate(dayListDate);
+              setEditingMeeting(null);
+              setDayListDate(null);
+              setModalOpen(true);
+            }}
+          />
+        )}
+
         {modalOpen && (
           <MeetingFormModal
             defaultDate={defaultDate}
             initialData={editingMeeting}
             employees={employees}
+            currentUserId={currentUserId}
             onClose={() => {
               setModalOpen(false);
               setEditingMeeting(null);
             }}
             onSave={handleSave}
+          />
+        )}
+
+        {conflictInfo && (
+          <MeetingConflictModal
+            meeting={conflictInfo.meeting}
+            conflicts={conflictInfo.conflicts}
+            onClose={() => setConflictInfo(null)}
+          />
+        )}
+
+        {confirmDeleteMeeting && (
+          <ConfirmModal
+            title="Delete meeting?"
+            message={`"${confirmDeleteMeeting.title}" will be permanently deleted. This can't be undone.`}
+            onCancel={() => setConfirmDeleteMeeting(null)}
+            onConfirm={() => handleDeleteMeeting(confirmDeleteMeeting)}
           />
         )}
       </div>

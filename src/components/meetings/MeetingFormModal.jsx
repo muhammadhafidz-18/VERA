@@ -4,8 +4,10 @@ import { useState, useRef, useEffect } from "react";
 import Icon from "@/lib/Icon";
 import TaskAvatar from "@/components/shared/TaskAvatar";
 
-export default function MeetingFormModal({ onClose, onSave, defaultDate, initialData, employees }) {
+export default function MeetingFormModal({ onClose, onSave, defaultDate, initialData, employees, currentUserId }) {
   const isEditing = !!initialData;
+  const canEdit = !isEditing || !initialData.createdBy || initialData.createdBy === currentUserId;
+
   const [form, setForm] = useState({
     title: initialData?.title || "",
     date: initialData?.date || defaultDate || "",
@@ -66,23 +68,30 @@ export default function MeetingFormModal({ onClose, onSave, defaultDate, initial
           </button>
         </div>
         <div className="modal-body">
+          {isEditing && !canEdit && (
+            <div className="card-note" style={{ marginBottom: 16, background: "var(--yellow-s)", borderColor: "var(--yellow)" }}>
+              <Icon name="lock" size={12} style={{ marginRight: 4 }} />
+              Only <b>{initialData.createdByName || "the creator"}</b> can edit or delete this meeting. You&apos;re viewing it read-only.
+            </div>
+          )}
+
           <div className="form-row">
             <label className="form-label">Title *</label>
-            <input className="input" value={form.title} onChange={update("title")} placeholder="Meeting title" />
+            <input className="input" value={form.title} onChange={update("title")} placeholder="Meeting title" disabled={!canEdit} />
           </div>
           <div className="form-row two">
             <div>
               <label className="form-label">Date *</label>
-              <input type="date" className="input" value={form.date} onChange={update("date")} />
+              <input type="date" className="input" value={form.date} onChange={update("date")} disabled={!canEdit} />
             </div>
             <div>
               <label className="form-label">Time *</label>
-              <input type="time" className="input" value={form.time} onChange={update("time")} />
+              <input type="time" className="input" value={form.time} onChange={update("time")} disabled={!canEdit} />
             </div>
           </div>
           <div className="form-row">
             <label className="form-label">Location</label>
-            <input className="input" value={form.location} onChange={update("location")} placeholder="Zoom, Ruang Meeting A, dll" />
+            <input className="input" value={form.location} onChange={update("location")} placeholder="Zoom, Ruang Meeting A, dll" disabled={!canEdit} />
           </div>
 
           <div className="form-row" ref={inviteBoxRef} style={{ position: "relative" }}>
@@ -93,55 +102,63 @@ export default function MeetingFormModal({ onClose, onSave, defaultDate, initial
                   <span key={e.id} className="invite-chip">
                     <TaskAvatar name={e.name} size={16} />
                     {e.name}
-                    <button type="button" onClick={() => removeAttendee(e.id)}>
-                      <Icon name="x" size={10} />
-                    </button>
+                    {canEdit && (
+                      <button type="button" onClick={() => removeAttendee(e.id)}>
+                        <Icon name="x" size={10} />
+                      </button>
+                    )}
                   </span>
                 ))}
               </div>
             )}
-            <input
-              className="input"
-              value={inviteQuery}
-              onChange={(e) => setInviteQuery(e.target.value)}
-              onFocus={() => setShowSuggestions(true)}
-              placeholder="Type a name or division to invite..."
-            />
-            {showSuggestions && suggestions.length > 0 && (
-              <div className="invite-suggest-panel">
-                {suggestions.map((e) => (
-                  <button type="button" key={e.id} className="invite-suggest-item" onClick={() => addAttendee(e.id)}>
-                    <TaskAvatar name={e.name} size={24} />
-                    <div>
-                      <div className="invite-suggest-name">{e.name}</div>
-                      <div className="invite-suggest-meta">
-                        {e.division} · {e.branch}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-            {showSuggestions && inviteQuery.trim() && suggestions.length === 0 && (
-              <div className="invite-suggest-panel">
-                <div className="invite-suggest-empty">No matching employee found.</div>
-              </div>
+            {canEdit && (
+              <>
+                <input
+                  className="input"
+                  value={inviteQuery}
+                  onChange={(e) => setInviteQuery(e.target.value)}
+                  onFocus={() => setShowSuggestions(true)}
+                  placeholder="Type a name or division to invite..."
+                />
+                {showSuggestions && suggestions.length > 0 && (
+                  <div className="invite-suggest-panel">
+                    {suggestions.map((e) => (
+                      <button type="button" key={e.id} className="invite-suggest-item" onClick={() => addAttendee(e.id)}>
+                        <TaskAvatar name={e.name} size={24} />
+                        <div>
+                          <div className="invite-suggest-name">{e.name}</div>
+                          <div className="invite-suggest-meta">
+                            {e.division} · {e.branch}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {showSuggestions && inviteQuery.trim() && suggestions.length === 0 && (
+                  <div className="invite-suggest-panel">
+                    <div className="invite-suggest-empty">No matching employee found.</div>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
           <div className="form-row" style={{ marginBottom: 0 }}>
             <label className="form-label">Description</label>
-            <textarea className="form-textarea" value={form.description} onChange={update("description")} placeholder="Agenda or additional notes" />
+            <textarea className="form-textarea" value={form.description} onChange={update("description")} placeholder="Agenda or additional notes" disabled={!canEdit} />
           </div>
           {error && <div className="form-error">{error}</div>}
         </div>
         <div className="modal-foot">
           <button className="btn btn-secondary" onClick={onClose}>
-            Cancel
+            {canEdit ? "Cancel" : "Close"}
           </button>
-          <button className="btn btn-primary" onClick={handleSave}>
-            {isEditing ? "Save Changes" : "Save"}
-          </button>
+          {canEdit && (
+            <button className="btn btn-primary" onClick={handleSave}>
+              {isEditing ? "Save Changes" : "Save"}
+            </button>
+          )}
         </div>
       </div>
     </div>

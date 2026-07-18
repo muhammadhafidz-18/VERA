@@ -11,5 +11,6 @@ export async function POST(request) {
     return NextResponse.json({ error: "Title, Date, and Time are required." }, { status: 400 });
   }
   const result = await createMeeting(body);
+  if (!result.success) return NextResponse.json(result, { status: 400 });
   return NextResponse.json(result);
 }
