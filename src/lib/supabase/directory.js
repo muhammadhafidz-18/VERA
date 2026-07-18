@@ -104,10 +104,29 @@ export async function createEmployee(input) {
     return { success: false, error: `Branch "${input.branch}" doesn't exist. Add it in Settings first.` };
   }
 
+  // Create the login account first (if a password was supplied). If this
+  // fails (e.g. email already registered in Auth), bail out before writing
+  // the employee row so we never end up with a directory entry that has no
+  // way to log in.
+  let authUserId = null;
+  if (input.password) {
+    const admin = createAdminClient();
+    const { data: authData, error: authError } = await admin.auth.admin.createUser({
+      email: input.email,
+      password: input.password,
+      email_confirm: true,
+    });
+    if (authError) {
+      return { success: false, error: `Could not create login account: ${authError.message}` };
+    }
+    authUserId = authData.user.id;
+  }
+
   const { data, error } = await supabase
     .from("employees")
     .insert({
       employee_code: employeeCode,
+      auth_user_id: authUserId,
       name: input.name,
       email: input.email,
       role_id: roleId,
@@ -122,7 +141,12 @@ export async function createEmployee(input) {
     .select(EMPLOYEE_SELECT)
     .single();
 
-  if (error) return { success: false, error: error.message };
+  if (error) {
+    if (authUserId) {
+      await createAdminClient().auth.admin.deleteUser(authUserId).catch(() => {});
+    }
+    return { success: false, error: error.message };
+  }
   return { success: true, employee: mapEmployeeRow(data) };
 }
 

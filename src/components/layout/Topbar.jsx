@@ -5,13 +5,20 @@ import { usePathname, useRouter } from "next/navigation";
 import Icon from "@/lib/Icon";
 import { PAGE_TITLES, PAGE_PATHS } from "@/lib/constants";
 import { taskTimeAgo } from "@/lib/vera/taskUiHelpers";
+import { getStoredTheme, setStoredTheme } from "@/lib/theme";
 
 function keyFromPathname(pathname) {
   const entry = Object.entries(PAGE_PATHS).find(([, path]) => path === pathname);
   return entry ? entry[0] : "command";
 }
 
-export default function Topbar({ onLogout }) {
+function initials(name) {
+  if (!name) return "?";
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] || "") + (parts[1]?.[0] || "")).toUpperCase() || name[0].toUpperCase();
+}
+
+export default function Topbar({ onLogout, user }) {
   const pathname = usePathname();
   const router = useRouter();
   const pageKey = keyFromPathname(pathname);
@@ -20,6 +27,17 @@ export default function Topbar({ onLogout }) {
 
   const [notifications, setNotifications] = useState([]);
   const [showNotifPanel, setShowNotifPanel] = useState(false);
+
+  const [theme, setTheme] = useState("light");
+  useEffect(() => {
+    setTheme(getStoredTheme());
+  }, []);
+
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    setStoredTheme(next);
+    setTheme(next);
+  }
 
   useEffect(() => {
     fetch("/api/notifications")
@@ -43,6 +61,9 @@ export default function Topbar({ onLogout }) {
     if (notif.taskId) router.push(`/tasks?openTask=${encodeURIComponent(notif.taskId)}`);
   }
 
+  const displayName = user?.name || "Unknown";
+  const displayRole = (user?.role || "user").toLowerCase();
+
   return (
     <div className="topbar">
       <div>
@@ -50,6 +71,14 @@ export default function Topbar({ onLogout }) {
         <div className="page-sub">{sub}</div>
       </div>
       <div className="user-badge">
+        <button
+          className="btn-icon"
+          title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          onClick={toggleTheme}
+        >
+          <Icon name={theme === "dark" ? "sun" : "moon"} size={15} />
+        </button>
+
         <div style={{ position: "relative" }}>
           <button className="btn-icon" style={{ position: "relative" }} onClick={() => setShowNotifPanel((v) => !v)}>
             <Icon name="bell" size={15} />
@@ -83,9 +112,9 @@ export default function Topbar({ onLogout }) {
         </div>
 
         <span style={{ fontSize: 13, color: "var(--text2)" }}>
-          Vaulthos · <span className="badge gray">superadmin</span>
+          {displayName} · <span className="badge gray">{displayRole}</span>
         </span>
-        <div className="user-avatar">VH</div>
+        <div className="user-avatar">{initials(displayName)}</div>
         <button className="logout-btn" title="Logout" onClick={() => setConfirmOpen(true)}>
           <Icon name="logout" size={15} />
         </button>

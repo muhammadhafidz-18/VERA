@@ -31,6 +31,12 @@ body {
   --blue:#3B7BC4;--blue-s:#E8F1FB;
   --teal:#2E9B86;--teal-s:#E1F4F0;
   --shadow:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.06);
+
+  /* Sidebar colors are intentionally NOT theme variables — sidebar always
+     stays the same blue gradient in both light and dark mode. */
+  --sidebar-start:#123F70;
+  --sidebar-mid:#1D5FA0;
+  --sidebar-end:#22ACC7;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Inter',-apple-system,'Segoe UI',system-ui,sans-serif;color:var(--text);min-height:100vh;background:radial-gradient(1100px 550px at 12% -8%, rgba(29,95,160,.06), transparent 60%),radial-gradient(900px 520px at 105% 0%, rgba(59,123,196,.045), transparent 55%),radial-gradient(700px 500px at 50% 110%, rgba(123,111,196,.035), transparent 60%),var(--bg);background-attachment:fixed}
@@ -41,7 +47,7 @@ button{font-family:inherit}
 
 .sidebar{
   width:220px;height:100vh;
-  background:linear-gradient(165deg,var(--accent2) 0%,var(--accent) 55%,var(--brand-end) 130%);
+  background:linear-gradient(165deg,var(--sidebar-start) 0%,var(--sidebar-mid) 55%,var(--sidebar-end) 130%);
   flex-shrink:0;overflow-y:auto;overflow-x:hidden;z-index:100;position:relative;box-shadow:2px 0 12px rgba(18,63,112,.22);display:flex;flex-direction:column;padding:0 10px 20px;
   transition:width .2s ease;
 }
@@ -636,4 +642,37 @@ select.input{cursor:pointer}
 .vera-float-panel-head button{color:#fff}
 .vera-float-panel-body{
   flex:1;min-height:0;padding:12px;display:flex;flex-direction:column;
+}
+
+/* ---------- Dark Mode ---------- */
+[data-theme="dark"]{
+  --bg:#1B212B;--bg2:#242C38;--bg3:#2C3543;
+  --border:#3A4453;--border2:#4C5768;
+  --text:#EDEFF3;--text2:#C2CAD6;--text3:#8D97A6;
+  --accent:#4C96E0;--accent2:#6FAEEA;--brand-start:#1D5FA0;--brand-mid:#2E8FCB;--brand-end:#3FC2D8;
+  --green:#5BCB6C;--green-s:#1E3524;
+  --yellow:#E5B655;--yellow-s:#3A2E10;
+  --red:#E8897A;--red-s:#3F211D;
+  --purple:#B3A8E6;--purple-s:#2C2748;
+  --blue:#71ABE6;--blue-s:#1E3247;
+  --teal:#54CDB4;--teal-s:#173731;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 1px 3px rgba(0,0,0,.4);
+}
+
+[data-theme="dark"] body{
+  background:
+    radial-gradient(1100px 550px at 12% -8%, rgba(76,150,224,.08), transparent 60%),
+    radial-gradient(900px 520px at 105% 0%, rgba(113,171,230,.06), transparent 55%),
+    radial-gradient(700px 500px at 50% 110%, rgba(179,168,230,.05), transparent 60%),
+    var(--bg);
+}
+
+[data-theme="dark"] .content{
+  background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,.045) 1px, transparent 0);
+}
+
+[data-theme="dark"] .login-card-wrap{
+  box-shadow:
+    14px 14px 32px rgba(0,0,0,.4),
+    -14px -14px 32px rgba(255,255,255,.02);
 }

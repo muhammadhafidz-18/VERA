@@ -6,6 +6,7 @@ import Icon from "@/lib/Icon";
 import Pagination from "@/components/employees/Pagination";
 import AgeCard from "@/components/employees/AgeCard";
 import EmployeeFormModal from "@/components/employees/EmployeeFormModal";
+import ConfirmModal from "@/components/shared/ConfirmModal";
 import { AGE_BRACKETS, getAge, PAGE_SIZE } from "@/lib/vera/employeeHelpers";
 
 export default function EmployeesPage() {
@@ -16,10 +17,12 @@ export default function EmployeesPage() {
 
   const [search, setSearch] = useState("");
   const [divisionFilter, setDivisionFilter] = useState("");
+  const [branchFilter, setBranchFilter] = useState("");
   const [ageFilter, setAgeFilter] = useState("");
   const [page, setPage] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState(null);
+  const [confirmDeleteEmployee, setConfirmDeleteEmployee] = useState(null);
 
   useEffect(() => {
     async function load() {
@@ -42,9 +45,10 @@ export default function EmployeesPage() {
       e.id.toLowerCase().includes(search.toLowerCase()) ||
       e.email.toLowerCase().includes(search.toLowerCase());
     const matchDivision = !divisionFilter || e.division === divisionFilter;
+    const matchBranch = !branchFilter || e.branch === branchFilter;
     const bracket = AGE_BRACKETS.find((b) => b.key === ageFilter);
     const matchAge = !ageFilter || (bracket && bracket.test(getAge(e.birthDate)));
-    return matchSearch && matchDivision && matchAge;
+    return matchSearch && matchDivision && matchBranch && matchAge;
   });
 
   const pageSize = PAGE_SIZE;
@@ -58,6 +62,10 @@ export default function EmployeesPage() {
   };
   const handleDivisionChange = (e) => {
     setDivisionFilter(e.target.value);
+    setPage(1);
+  };
+  const handleBranchChange = (e) => {
+    setBranchFilter(e.target.value);
     setPage(1);
   };
 
@@ -91,10 +99,10 @@ export default function EmployeesPage() {
     setEditingEmployee(null);
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm(`Delete employee data ${id}?`)) return;
-    const res = await fetch(`/api/employees/${encodeURIComponent(id)}`, { method: "DELETE" });
-    if (res.ok) setEmployees((list) => list.filter((e) => e.id !== id));
+  const handleDeleteConfirm = async (employee) => {
+    const res = await fetch(`/api/employees/${encodeURIComponent(employee.id)}`, { method: "DELETE" });
+    if (res.ok) setEmployees((list) => list.filter((e) => e.id !== employee.id));
+    setConfirmDeleteEmployee(null);
   };
 
   if (loading) {
@@ -152,12 +160,21 @@ export default function EmployeesPage() {
               </option>
             ))}
           </select>
-          {(search || divisionFilter || ageFilter) && (
+          <select className="input" style={{ width: 180 }} value={branchFilter} onChange={handleBranchChange}>
+            <option value="">All Branches</option>
+            {branches.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </select>
+          {(search || divisionFilter || branchFilter || ageFilter) && (
             <button
               className="btn btn-secondary btn-sm"
               onClick={() => {
                 setSearch("");
                 setDivisionFilter("");
+                setBranchFilter("");
                 setAgeFilter("");
                 setPage(1);
               }}
@@ -174,7 +191,9 @@ export default function EmployeesPage() {
                 <th>Employee ID</th>
                 <th>Name</th>
                 <th>Email</th>
+                <th>Role</th>
                 <th>Branch</th>
+                <th>Division</th>
                 <th>Join Date</th>
                 <th>Phone Number</th>
                 <th>Action</th>
@@ -183,7 +202,7 @@ export default function EmployeesPage() {
             <tbody>
               {paged.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: "center", padding: "32px 16px", color: "var(--text3)" }}>
+                  <td colSpan={9} style={{ textAlign: "center", padding: "32px 16px", color: "var(--text3)" }}>
                     <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.4 }}>&#9900;</div>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>No Data Available</div>
                   </td>
@@ -194,7 +213,11 @@ export default function EmployeesPage() {
                   <td className="mono">{e.id}</td>
                   <td style={{ fontWeight: 500 }}>{e.name}</td>
                   <td className="mono">{e.email}</td>
+                  <td>
+                    <span className={`badge ${e.role === "Superadmin" ? "purple" : "gray"}`}>{e.role}</span>
+                  </td>
                   <td>{e.branch}</td>
+                  <td>{e.division}</td>
                   <td className="mono">{e.joinDate}</td>
                   <td className="mono">{e.phone}</td>
                   <td>
@@ -208,7 +231,12 @@ export default function EmployeesPage() {
                     >
                       <Icon name="pencil" size={13} />
                     </button>
-                    <button className="btn-icon" style={{ color: "var(--red)" }} title="Delete" onClick={() => handleDelete(e.id)}>
+                    <button
+                      className="btn-icon"
+                      style={{ color: "var(--red)" }}
+                      title="Delete"
+                      onClick={() => setConfirmDeleteEmployee(e)}
+                    >
                       <Icon name="trash" size={13} />
                     </button>
                   </td>
@@ -224,11 +252,21 @@ export default function EmployeesPage() {
             initialData={editingEmployee}
             divisions={divisions}
             branches={branches}
+            employees={employees}
             onClose={() => {
               setModalOpen(false);
               setEditingEmployee(null);
             }}
             onSave={handleSave}
+          />
+        )}
+
+        {confirmDeleteEmployee && (
+          <ConfirmModal
+            title="Delete employee?"
+            message={`"${confirmDeleteEmployee.name}" (${confirmDeleteEmployee.id}) will be permanently deleted, including their login access. This can't be undone.`}
+            onCancel={() => setConfirmDeleteEmployee(null)}
+            onConfirm={() => handleDeleteConfirm(confirmDeleteEmployee)}
           />
         )}
       </div>
