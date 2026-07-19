@@ -7,6 +7,7 @@ import RoleManagementTab from "@/components/settings/RoleManagementTab";
 import MasterListTab from "@/components/settings/MasterListTab";
 import VoiceAiTab from "@/components/settings/VoiceAiTab";
 import ChatbaseTab from "@/components/settings/ChatbaseTab";
+import SettingsPageSkeleton from "@/components/shared/skeletons/SettingsPageSkeleton";
 
 const TABS = [
   ["users", "User Management"],
@@ -54,21 +55,21 @@ export default function SettingsPage() {
           })}
         </div>
         {loading ? (
-          <div style={{ padding: 24, color: "var(--text3)" }}>Loading...</div>
-        ) : (
-          <>
-            {tab === "users" && <UserManagementTab />}
-            {tab === "roles" && <RoleManagementTab />}
-            {tab === "divisi" && (
-              <MasterListTab items={divisions} setItems={setDivisions} labelCol="Division" employeeField="division" employees={employees} kind="divisions" />
-            )}
-            {tab === "branch" && (
-              <MasterListTab items={branches} setItems={setBranches} labelCol="Branch" employeeField="branch" employees={employees} kind="branches" />
-            )}
-            {tab === "voice" && <VoiceAiTab />}
-            {tab === "knowledge" && <ChatbaseTab />}
-          </>
-        )}
+        <SettingsPageSkeleton />
+      ) : (
+        <>
+          {tab === "users" && <UserManagementTab />}
+          {tab === "roles" && <RoleManagementTab />}
+          {tab === "divisi" && (
+            <MasterListTab items={divisions} setItems={setDivisions} labelCol="Division" employeeField="division" employees={employees} kind="divisions" />
+          )}
+          {tab === "branch" && (
+            <MasterListTab items={branches} setItems={setBranches} labelCol="Branch" employeeField="branch" employees={employees} kind="branches" />
+          )}
+          {tab === "voice" && <VoiceAiTab />}
+          {tab === "knowledge" && <ChatbaseTab />}
+        </>
+      )}
       </div>
     </DashboardLayout>
   );

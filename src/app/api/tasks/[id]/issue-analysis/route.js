@@ -5,8 +5,10 @@ import { TASK_SYSTEM_PROMPT_ISSUE_ANALYSIS } from "@/lib/vera/taskPrompts";
 
 export async function POST(request, { params }) {
   const { id } = await params;
+
   const task = await getTaskById(id);
   if (!task) return NextResponse.json({ error: "Task not found." }, { status: 404 });
+
   if ((task.aiIssueAnalysisGenerateCount || 0) >= 2) {
     return NextResponse.json({ error: "You've reached the 2x generate limit for this feature." }, { status: 429 });
   }
@@ -28,6 +30,10 @@ export async function POST(request, { params }) {
       aiIssueAnalysisGeneratedAt: Date.now(),
       aiIssueAnalysisGenerateCount: (task.aiIssueAnalysisGenerateCount || 0) + 1,
     });
+
+    if (!result.success) {
+      return NextResponse.json(result, { status: result.forbidden ? 403 : 400 });
+    }
     return NextResponse.json({ ...result, previousAnalysis });
   } catch (err) {
     return NextResponse.json({ error: "Failed to reach AI. Please try again." }, { status: 502 });

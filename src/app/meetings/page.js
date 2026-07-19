@@ -10,6 +10,7 @@ import MeetingDayListModal from "@/components/meetings/MeetingDayListModal";
 import ConfirmModal from "@/components/shared/ConfirmModal";
 import { isoDate } from "@/lib/vera/meetingHelpers";
 import { loadSession } from "@/lib/session";
+import MeetingsPageSkeleton from "@/components/shared/skeletons/MeetingsPageSkeleton";
 
 export default function MeetingsPage() {
   const [meetings, setMeetings] = useState([]);
@@ -91,7 +92,7 @@ export default function MeetingsPage() {
   if (loading) {
     return (
       <DashboardLayout>
-        <div style={{ padding: 40, textAlign: "center", color: "var(--text3)" }}>Loading...</div>
+        <MeetingsPageSkeleton />
       </DashboardLayout>
     );
   }

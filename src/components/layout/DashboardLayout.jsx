@@ -6,10 +6,9 @@ import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 import { loadSession, clearSession } from "@/lib/session";
 import { signOut } from "@/lib/supabase/auth";
-// tambah import
 import VeraFloatingChat from "@/components/vera/VeraFloatingChat";
 
-export default function DashboardLayout({ children }) {
+export default function DashboardLayout({ children, hideFloatingChat = false }) {
   const router = useRouter();
   const [checked, setChecked] = useState(false);
   const [user, setUser] = useState(null);
@@ -39,7 +38,7 @@ export default function DashboardLayout({ children }) {
         <Topbar onLogout={handleLogout} user={user} />
         <div className="content">{children}</div>
       </div>
-      <VeraFloatingChat onLogout={handleLogout} />
+      {!hideFloatingChat && <VeraFloatingChat onLogout={handleLogout} />}
     </div>
   );
 }

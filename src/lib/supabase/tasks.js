@@ -103,6 +103,13 @@ function isTaskParticipant(taskRow, current) {
   return taskRow.created_by === current.uuid || taskRow.assigned_to === current.uuid;
 }
 
+// Superadmin bypasses the participant restriction everywhere in this
+// file — full visibility per product decision, matching the description
+// already shown in RoleManagementTab.jsx ("Full access to all menus...").
+function isSuperadmin(current) {
+  return current?.role === "Superadmin";
+}
+
 // ---------- Reads ----------
 export async function getTasks() {
   const supabase = await createClient();
@@ -125,21 +132,27 @@ export async function getTasks() {
     })
   );
 
-  // Mirrors getMeetings(): only tasks the logged-in user is actually
-  // involved in — either they created it, or it's assigned to them.
-  // Filtered in JS (not via a query-level .or()) since created_by/
-  // assigned_to are also used as embedded-resource aliases in TASK_FIELDS;
-  // filtering post-fetch avoids any ambiguity with PostgREST there.
-  // Without this, every authenticated user could see every task in the
-  // company regardless of division, which isn't the intended directory
-  // model (task list is per-person, not a global feed).
+  // Superadmin sees every task, company-wide. Everyone else only sees
+  // tasks they created or were assigned to.
+  if (isSuperadmin(current)) return mapped;
   return mapped.filter((t) => t.createdBy === current.id || t.assignedTo === current.id);
 }
 
 export async function getTaskById(id) {
   const supabase = await createClient();
+  const current = await getCurrentEmployee();
+
   const { data: row, error } = await supabase.from("tasks").select(TASK_FIELDS).eq("task_code", id).maybeSingle();
   if (error || !row) return null;
+
+  // Non-participants get null (treated as 404) — UNLESS the requester is
+  // Superadmin, who can open any task by ID.
+  if (
+    !isSuperadmin(current) &&
+    !isTaskParticipant({ created_by: row.created_by?.id, assigned_to: row.assigned_to?.id }, current)
+  ) {
+    return null;
+  }
 
   const [chats, auditLog] = await Promise.all([fetchChats(supabase, row.id), fetchAuditLog(supabase, row.id)]);
   return mapTaskRow(row, { chats, auditLog });
@@ -206,14 +219,17 @@ export async function updateTask(id, patch) {
   if (findError) return { success: false, error: findError.message };
   if (!taskRow) return { success: false, error: `No task found with ID ${id}.` };
 
-  // Only the creator or the assignee may touch this task at all.
-  if (!isTaskParticipant(taskRow, current)) {
+  // Only the creator or the assignee may touch this task at all —
+  // Superadmin can edit any task too.
+  if (!isSuperadmin(current) && !isTaskParticipant(taskRow, current)) {
     return { success: false, error: "You don't have access to edit this task.", forbidden: true };
   }
 
   // Reassigning (changing who the task belongs to) is creator-only — mirrors
-  // TaskEditModal's canReassign = task.createdBy === currentUserId on the client.
-  if (patch.assignedTo !== undefined && taskRow.created_by !== current?.uuid) {
+  // TaskEditModal's canReassign = task.createdBy === currentUserId on the
+  // client. Superadmin is still allowed to reassign, matching their
+  // full-access role.
+  if (patch.assignedTo !== undefined && !isSuperadmin(current) && taskRow.created_by !== current?.uuid) {
     return { success: false, error: "Only the task creator can reassign this task.", forbidden: true };
   }
 
@@ -260,8 +276,10 @@ export async function deleteTask(id) {
   if (findError) return { success: false, error: findError.message };
   if (!taskRow) return { success: false, error: "Task not found." };
 
-  // Only the creator may delete a task — mirrors deleteMeeting's ownership check.
-  if (taskRow.created_by && current && taskRow.created_by !== current.uuid) {
+  // Only the creator may delete a task — Superadmin can delete any task
+  // (still subject to the open/no-chats rule below — that's a business
+  // rule about task state, not about ownership).
+  if (!isSuperadmin(current) && taskRow.created_by && current && taskRow.created_by !== current.uuid) {
     return { success: false, error: "Only the task creator can delete this task.", forbidden: true };
   }
 
@@ -301,8 +319,9 @@ export async function addTaskChat(taskCode, message, attachment) {
     .maybeSingle();
   if (!taskRow) return { success: false, error: "Task not found." };
 
-  // Only the creator or assignee can post messages on this task.
-  if (!isTaskParticipant(taskRow, current)) {
+  // Only the creator or assignee can post messages on this task —
+  // Superadmin can post/participate in any task's chat too.
+  if (!isSuperadmin(current) && !isTaskParticipant(taskRow, current)) {
     return { success: false, error: "You don't have access to this task.", forbidden: true };
   }
 
@@ -337,8 +356,9 @@ export async function changeTaskStatus(taskCode, newStatus) {
     .maybeSingle();
   if (!taskRow) return { success: false, error: "Task not found." };
 
-  // Only the creator or assignee can move a task's status.
-  if (!isTaskParticipant(taskRow, current)) {
+  // Only the creator or assignee can move a task's status —
+  // Superadmin can change status on any task too.
+  if (!isSuperadmin(current) && !isTaskParticipant(taskRow, current)) {
     return { success: false, error: "You don't have access to this task.", forbidden: true };
   }
 

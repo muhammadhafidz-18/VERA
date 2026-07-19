@@ -8,6 +8,7 @@ import AgeCard from "@/components/employees/AgeCard";
 import EmployeeFormModal from "@/components/employees/EmployeeFormModal";
 import ConfirmModal from "@/components/shared/ConfirmModal";
 import { AGE_BRACKETS, getAge, PAGE_SIZE } from "@/lib/vera/employeeHelpers";
+import EmployeesPageSkeleton from "@/components/shared/skeletons/EmployeesPageSkeleton";
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState([]);
@@ -106,11 +107,11 @@ export default function EmployeesPage() {
   };
 
   if (loading) {
-    return (
-      <DashboardLayout>
-        <div style={{ padding: 40, textAlign: "center", color: "var(--text3)" }}>Loading...</div>
-      </DashboardLayout>
-    );
+  return (
+    <DashboardLayout>
+      <EmployeesPageSkeleton />
+    </DashboardLayout>
+  );
   }
 
   return (

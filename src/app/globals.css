@@ -643,6 +643,8 @@ select.input{cursor:pointer}
 .vera-float-panel-body{
   flex:1;min-height:0;padding:12px;display:flex;flex-direction:column;
 }
+.vera-float-btn.left{ left:26px; right:auto; }
+.vera-float-panel.left{ left:24px; right:auto; }
 
 /* ---------- Dark Mode ---------- */
 [data-theme="dark"]{
@@ -675,4 +677,17 @@ select.input{cursor:pointer}
   box-shadow:
     14px 14px 32px rgba(0,0,0,.4),
     -14px -14px 32px rgba(255,255,255,.02);
+}
+
+/*------ Skleton CSS ------- */
+
+.skeleton{
+  background:linear-gradient(90deg, var(--bg3) 25%, var(--border) 37%, var(--bg3) 63%);
+  background-size:400% 100%;
+  animation:skeleton-shimmer 1.4s ease infinite;
+  display:block;
+}
+@keyframes skeleton-shimmer{
+  0%{background-position:100% 50%}
+  100%{background-position:0 50%}
 }

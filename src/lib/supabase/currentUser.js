@@ -8,8 +8,9 @@ import { createClient } from "./server";
 
 // Returns both the employees.id (uuid — needed for FK columns like
 // created_by/assigned_to/sender_id) and employee_code (the "EMP-0001"
-// style id the rest of the app displays), or null if not logged in / not
-// yet linked to an employee record.
+// style id the rest of the app displays), plus role name (needed for
+// Superadmin bypass checks), or null if not logged in / not yet linked
+// to an employee record.
 export async function getCurrentEmployee() {
   const supabase = await createClient();
   const {
@@ -19,10 +20,16 @@ export async function getCurrentEmployee() {
 
   const { data, error } = await supabase
     .from("employees")
-    .select("id, employee_code, name, email")
+    .select("id, employee_code, name, email, roles ( name )")
     .eq("auth_user_id", user.id)
     .maybeSingle();
 
   if (error || !data) return null;
-  return { uuid: data.id, id: data.employee_code, name: data.name, email: data.email };
+  return {
+    uuid: data.id,
+    id: data.employee_code,
+    name: data.name,
+    email: data.email,
+    role: data.roles?.name || "User",
+  };
 }

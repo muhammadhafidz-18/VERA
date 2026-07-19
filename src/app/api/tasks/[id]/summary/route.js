@@ -5,8 +5,14 @@ import { TASK_SYSTEM_PROMPT_SUMMARY } from "@/lib/vera/taskPrompts";
 
 export async function POST(request, { params }) {
   const { id } = await params;
+
   const task = await getTaskById(id);
   if (!task) return NextResponse.json({ error: "Task not found." }, { status: 404 });
+
+  // Limit check moved BEFORE the Claude call (previously it happened,
+  // but AFTER getTaskById could still leak another user's chat transcript
+  // into the prompt — that access-control gap is fixed by getTaskById now
+  // returning null for non-participants, per Bug #1 fix above).
   if ((task.aiSummaryGenerateCount || 0) >= 2) {
     return NextResponse.json({ error: "You've reached the 2x generate limit for this feature." }, { status: 429 });
   }
@@ -27,6 +33,11 @@ export async function POST(request, { params }) {
       aiSummaryGeneratedAt: Date.now(),
       aiSummaryGenerateCount: (task.aiSummaryGenerateCount || 0) + 1,
     });
+
+    // FIX (Bug #2b): don't return 200 when result.success is false.
+    if (!result.success) {
+      return NextResponse.json(result, { status: result.forbidden ? 403 : 400 });
+    }
     return NextResponse.json({ ...result, previousSummary });
   } catch (err) {
     return NextResponse.json({ error: "Failed to reach AI. Please try again." }, { status: 502 });

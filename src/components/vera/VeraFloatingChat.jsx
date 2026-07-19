@@ -6,16 +6,18 @@ import Icon from "@/lib/Icon";
 import VeraChat from "./VeraChat";
 import { PAGE_PATHS } from "@/lib/constants";
 
-export default function VeraFloatingChat({ onLogout }) {
+export default function VeraFloatingChat({ onLogout, position = "right" }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
   if (pathname === PAGE_PATHS.command) return null;
 
+  const posClass = position === "left" ? " left" : "";
+
   return (
     <>
       {open && (
-        <div className="vera-float-panel">
+        <div className={`vera-float-panel${posClass}`}>
           <div className="vera-float-panel-head">
             <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <Icon name="message-chatbot" size={14} /> Ask V.E.R.A
@@ -28,7 +30,7 @@ export default function VeraFloatingChat({ onLogout }) {
       )}
 
       <button
-        className="vera-float-btn"
+        className={`vera-float-btn${posClass}`}
         onClick={() => setOpen((v) => !v)}
         title={open ? "Tutup Ask V.E.R.A" : "Ask V.E.R.A"}
       >

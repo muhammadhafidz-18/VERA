@@ -8,6 +8,7 @@ import TaskIndex from "@/components/tasks/TaskIndex";
 import TaskDetailView from "@/components/tasks/TaskDetailView";
 import TaskCreateModal from "@/components/tasks/TaskCreateModal";
 import { loadSession } from "@/lib/session";
+import TasksPageSkeleton from "@/components/shared/skeletons/TasksPageSkeleton";
 
 export default function TasksPage() {
   const searchParams = useSearchParams();
@@ -124,13 +125,13 @@ export default function TasksPage() {
   if (loading) {
     return (
       <DashboardLayout>
-        <div style={{ padding: 40, textAlign: "center", color: "var(--text3)" }}>Loading...</div>
+        <TasksPageSkeleton />
       </DashboardLayout>
     );
   }
 
   return (
-    <DashboardLayout>
+    <DashboardLayout hideFloatingChat={view === "detail"}>
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
           <div style={{ fontSize: 12.5, color: "var(--text2)" }}>Submit tasks, complaints, or requests to other divisions.</div>
