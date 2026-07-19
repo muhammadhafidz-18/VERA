@@ -691,3 +691,36 @@ select.input{cursor:pointer}
   0%{background-position:100% 50%}
   100%{background-position:0 50%}
 }
+
+/* ---------- Meeting Detail Modal (view-only, Google-Calendar-inspired) ---------- */
+.meeting-detail-card{ width:420px; padding:0; }
+.meeting-detail-toolbar{
+  display:flex; justify-content:flex-end; gap:6px;
+  padding:14px 14px 0;
+}
+.meeting-detail-body{ padding:6px 24px 24px; }
+.meeting-detail-head{ display:flex; align-items:flex-start; gap:12px; margin-bottom:20px; }
+.meeting-detail-dot{ width:12px; height:12px; border-radius:3px; margin-top:6px; flex-shrink:0; }
+.meeting-detail-title{ font-size:19px; font-weight:600; color:var(--text); line-height:1.3; }
+.meeting-detail-datetime{ font-size:13px; color:var(--text2); margin-top:3px; }
+.meeting-detail-row{
+  display:flex; align-items:center; gap:14px;
+  font-size:13px; color:var(--text); padding:10px 0;
+  border-top:1px solid var(--border);
+}
+.meeting-detail-icon{ color:var(--text3); flex-shrink:0; }
+.meeting-join-btn{
+  display:inline-flex; align-items:center; gap:7px;
+  background:var(--accent); color:#fff; padding:9px 18px; border-radius:20px;
+  font-size:13px; font-weight:600; text-decoration:none; transition:background .15s;
+}
+.meeting-join-btn:hover{ background:var(--accent2); }
+.meeting-link-text{
+  display:flex; align-items:center; gap:5px; font-size:11px;
+  color:var(--text3); margin-top:6px; word-break:break-all;
+}
+.meeting-guest-count{ font-size:13px; color:var(--text); margin-bottom:8px; }
+.meeting-guest-list{ display:flex; flex-direction:column; gap:10px; }
+.meeting-guest-row{ display:flex; align-items:center; gap:10px; }
+.meeting-guest-name{ font-size:13px; color:var(--text); font-weight:500; }
+.meeting-guest-role{ font-size:11px; color:var(--text3); }

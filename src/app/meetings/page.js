@@ -11,6 +11,7 @@ import ConfirmModal from "@/components/shared/ConfirmModal";
 import { isoDate } from "@/lib/vera/meetingHelpers";
 import { loadSession } from "@/lib/session";
 import MeetingsPageSkeleton from "@/components/shared/skeletons/MeetingsPageSkeleton";
+import MeetingDetailModal from "@/components/meetings/MeetingDetailModal"; // tambah import
 
 export default function MeetingsPage() {
   const [meetings, setMeetings] = useState([]);
@@ -26,6 +27,7 @@ export default function MeetingsPage() {
 
   const [dayListDate, setDayListDate] = useState(null);
   const [confirmDeleteMeeting, setConfirmDeleteMeeting] = useState(null);
+  const [viewingMeeting, setViewingMeeting] = useState(null);
 
   useEffect(() => {
   async function load() {
@@ -130,10 +132,7 @@ export default function MeetingsPage() {
         <MeetingCalendar
           meetings={meetings}
           onDayClick={(iso) => setDayListDate(iso)}
-          onEventClick={(meeting) => {
-            setEditingMeeting(meeting);
-            setModalOpen(true);
-          }}
+          onEventClick={(meeting) => setViewingMeeting(meeting)}
         />
 
         {dayListDate && (
@@ -143,9 +142,8 @@ export default function MeetingsPage() {
             currentUserId={currentUserId}
             onClose={() => setDayListDate(null)}
             onSelectMeeting={(m) => {
-              setEditingMeeting(m);
+              setViewingMeeting(m);
               setDayListDate(null);
-              setModalOpen(true);
             }}
             onDeleteMeeting={(m) => setConfirmDeleteMeeting(m)}
             onAddMeeting={() => {
@@ -168,6 +166,25 @@ export default function MeetingsPage() {
               setEditingMeeting(null);
             }}
             onSave={handleSave}
+          />
+        )}
+        
+        {viewingMeeting && (
+          <MeetingDetailModal
+            meeting={viewingMeeting}
+            employees={employees}
+            currentUserId={currentUserId}
+            onClose={() => setViewingMeeting(null)}
+            onEdit={() => {
+              setEditingMeeting(viewingMeeting);
+              setDefaultDate("");
+              setViewingMeeting(null);
+              setModalOpen(true);
+            }}
+            onDelete={() => {
+              setConfirmDeleteMeeting(viewingMeeting);
+              setViewingMeeting(null);
+            }}
           />
         )}
 

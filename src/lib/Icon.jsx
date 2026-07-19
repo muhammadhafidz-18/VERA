@@ -80,5 +80,11 @@ function Icon({ name, size = 16, style }) {
       return <svg {...common}><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z" /></svg>;
     default:
       return null;
+    case "video":
+      return <svg {...common}><rect x="1" y="5" width="15" height="14" rx="2" /><polygon points="23 7 16 12 23 17 23 7" /></svg>;
+    case "map-pin":
+      return <svg {...common}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" /><circle cx="12" cy="10" r="3" /></svg>;
+    case "external-link":
+      return <svg {...common}><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>;
   }
 }

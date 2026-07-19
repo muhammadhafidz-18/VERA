@@ -23,16 +23,20 @@ export default function MeetingFormModal({ onClose, onSave, defaultDate, initial
 
   const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
 
-  const invitedEmployees = form.attendeeIds.map((id) => employees.find((e) => e.id === id)).filter(Boolean);
+  const invitedEmployees = form.attendeeIds
+  .filter((id) => id !== currentUserId)
+  .map((id) => employees.find((e) => e.id === id))
+  .filter(Boolean);
 
-  const suggestions = employees
-    .filter((e) => {
-      if (form.attendeeIds.includes(e.id)) return false;
-      if (!inviteQuery.trim()) return true;
-      const q = inviteQuery.toLowerCase();
-      return e.name.toLowerCase().includes(q) || e.division.toLowerCase().includes(q) || e.email.toLowerCase().includes(q);
-    })
-    .slice(0, 6);
+const suggestions = employees
+  .filter((e) => {
+    if (e.id === currentUserId) return false;
+    if (form.attendeeIds.includes(e.id)) return false;
+    if (!inviteQuery.trim()) return true;
+    const q = inviteQuery.toLowerCase();
+    return e.name.toLowerCase().includes(q) || e.division.toLowerCase().includes(q) || e.email.toLowerCase().includes(q);
+  })
+  .slice(0, 6);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -70,8 +74,6 @@ export default function MeetingFormModal({ onClose, onSave, defaultDate, initial
         <div className="modal-body">
           {isEditing && !canEdit && (
             <div className="card-note" style={{ marginBottom: 16, background: "var(--yellow-s)", borderColor: "var(--yellow)" }}>
-              <Icon name="lock" size={12} style={{ marginRight: 4 }} />
-              Only <b>{initialData.createdByName || "the creator"}</b> can edit or delete this meeting. You&apos;re viewing it read-only.
             </div>
           )}
 
