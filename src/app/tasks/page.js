@@ -1,6 +1,6 @@
 // src/app/tasks/page.js
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import Icon from "@/lib/Icon";
@@ -10,7 +10,7 @@ import TaskCreateModal from "@/components/tasks/TaskCreateModal";
 import { loadSession } from "@/lib/session";
 import TasksPageSkeleton from "@/components/shared/skeletons/TasksPageSkeleton";
 
-export default function TasksPage() {
+function TasksPageInner() {
   const searchParams = useSearchParams();
   const [tasks, setTasks] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -166,5 +166,15 @@ export default function TasksPage() {
         )}
       </div>
     </DashboardLayout>
+  );
+}
+
+// useSearchParams() requires a Suspense boundary during static generation —
+// without this wrapper, `next build` fails even though `next dev` works fine.
+export default function TasksPage() {
+  return (
+    <Suspense fallback={<TasksPageSkeleton />}>
+      <TasksPageInner />
+    </Suspense>
   );
 }
