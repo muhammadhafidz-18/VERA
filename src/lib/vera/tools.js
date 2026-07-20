@@ -82,6 +82,74 @@ export const VERA_TOOLS = [
     input_schema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
   },
   {
+    name: "update_employee",
+    description: "Update fields on an existing employee record. Requires the employee's ID (use get_employees first if you only have a name). Only include the fields that should change.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Employee ID to update, e.g. EMP-0003" },
+        name: { type: "string" },
+        email: { type: "string" },
+        division: { type: "string" },
+        branch: { type: "string" },
+        role: { type: "string", enum: ["Superadmin", "User"] },
+        phone: { type: "string" },
+        address: { type: "string" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "get_tasks",
+    description: "List tasks. Use this to answer questions about task status, who a task is assigned to, or how many tasks exist. Optionally resolve a person's tasks by first calling get_employees to find their ID, then filter results yourself by assignedTo/createdBy in your reply.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "update_task",
+    description: "Update fields on an existing task (title, description, priority, due date, assignee, or status). Requires the task ID (use get_tasks first if you only have a description of it). Only include the fields that should change. To change status, set the `status` field to one of: open, in_progress, done.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Task ID to update, e.g. TSK-0007" },
+        title: { type: "string" },
+        description: { type: "string" },
+        assignedTo: { type: "string", description: "Employee ID to reassign to" },
+        priority: { type: "string", enum: ["low", "medium", "high"] },
+        dueDate: { type: "string", description: "Format YYYY-MM-DD" },
+        status: { type: "string", enum: ["open", "in_progress", "done"] },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "get_divisions",
+    description: "List all divisions in the company's Settings. Use this to check whether a division already exists before adding one, or to answer questions about what divisions exist.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "update_division",
+    description: "Rename an existing division. Only call after confirming both the current and new name with the user.",
+    input_schema: {
+      type: "object",
+      properties: { oldName: { type: "string" }, newName: { type: "string" } },
+      required: ["oldName", "newName"],
+    },
+  },
+  {
+    name: "get_branches",
+    description: "List all branches/cities in the company's Settings. Use this to check whether a branch already exists before adding one, or to answer questions about what branches exist.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "update_branch",
+    description: "Rename an existing branch. Only call after confirming both the current and new name with the user.",
+    input_schema: {
+      type: "object",
+      properties: { oldName: { type: "string" }, newName: { type: "string" } },
+      required: ["oldName", "newName"],
+    },
+  },
+  {
     name: "logout",
     description: "Sign the current user out of the app, ending their session. This is destructive/disruptive — only call it after the user has clearly and explicitly confirmed they want to log out in THIS conversation.",
     input_schema: { type: "object", properties: {} },

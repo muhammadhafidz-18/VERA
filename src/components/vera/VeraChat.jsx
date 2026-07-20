@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import Icon from "@/lib/Icon";
 import { speak, warmUpVoices } from "@/lib/voice";
 import { clearSession, loadSession } from "@/lib/session";
+import { signOut } from "@/lib/supabase/auth";
 import {
   VERA_CHAT_HISTORY_KEY,
   getVeraGreeting,
@@ -17,8 +18,7 @@ import {
   COMMAND_SUGGESTIONS,
 } from "@/lib/vera/chatHelpers";
 
-// ganti signature function-nya:
-export default function VeraChat({ onLogout, compact = false }) {
+export default function VeraChat({ onLogout }) {
   const greeting = getVeraGreeting(loadSession()?.user?.name);
   const [messages, setMessages] = useState(() => loadVeraChatHistory() || [{ role: "assistant", text: greeting }]);
   const [input, setInput] = useState("");
@@ -68,8 +68,9 @@ export default function VeraChat({ onLogout, compact = false }) {
     } catch (err) {}
   };
 
-  const doLogout = () => {
+  const doLogout = async () => {
     clearSession();
+    await signOut();
     if (onLogout) onLogout();
   };
 
@@ -129,7 +130,9 @@ export default function VeraChat({ onLogout, compact = false }) {
       if (data.resetRequested) resetChatSilently();
       if (data.logoutRequested) setTimeout(doLogout, 1600);
     } catch (err) {
-      const fallback = "Maaf, terjadi kendala koneksi ke V.E.R.A. Coba lagi sebentar.";
+      const fallback = err?.message
+        ? `Maaf, terjadi kendala: ${err.message}`
+        : "Maaf, terjadi kendala koneksi ke V.E.R.A. Coba lagi sebentar.";
       setMessages((m) => [...m, { role: "assistant", text: fallback }]);
       if (viaVoice) speak(fallback);
     } finally {
@@ -180,18 +183,9 @@ export default function VeraChat({ onLogout, compact = false }) {
 
   const isEmpty = messages.length <= 1;
 
- return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: compact ? "100%" : "calc(100vh - 105px)",
-        maxWidth: compact ? "100%" : 720,
-        width: "100%",
-        margin: compact ? 0 : "0 auto",
-      }}
-    >
-      <div className={`vera-hero${compact ? " compact" : ""}`}>
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 105px)", maxWidth: 720, width: "100%", margin: "0 auto" }}>
+      <div className="vera-hero">
         <div className="vera-hero-icon-badge">
           <Icon name="message-chatbot" size={17} style={{ color: "#fff" }} />
         </div>
@@ -207,7 +201,7 @@ export default function VeraChat({ onLogout, compact = false }) {
         </span>
       </div>
 
-      {isEmpty && !compact && (
+      {isEmpty && (
         <div className="suggestion-panel">
           <div className="suggestion-grid">
             {COMMAND_SUGGESTIONS.map((s, i) => (

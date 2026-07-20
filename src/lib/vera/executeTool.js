@@ -1,11 +1,16 @@
 // src/lib/vera/executeTool.js
 import { getMeetings, createMeeting } from "@/lib/supabase/meetings";
-import { createTask } from "@/lib/supabase/tasks";
+import { getTasks, createTask, updateTask, changeTaskStatus } from "@/lib/supabase/tasks";
 import {
   getEmployees,
   createEmployee,
+  updateEmployee,
   addDivision,
   addBranch,
+  getDivisions,
+  renameDivision,
+  getBranches,
+  renameBranch,
 } from "@/lib/supabase/directory";
 
 export async function executeVeraTool(name, input) {
@@ -46,6 +51,53 @@ export async function executeVeraTool(name, input) {
       return { success: false, error: "Missing required fields (title, assignedTo)." };
     }
     return await createTask(input);
+  }
+
+  if (name === "update_employee") {
+    if (!input.id) return { success: false, error: "Employee ID is required." };
+    const { id, ...patch } = input;
+    return await updateEmployee(id, patch);
+  }
+
+  if (name === "get_tasks") {
+    const results = await getTasks();
+    return {
+      total_matches: results.length,
+      results: results.slice(0, 25).map((t) => ({
+        id: t.id, title: t.title, assignedTo: t.assignedTo, createdBy: t.createdBy, status: t.status, priority: t.priority, dueDate: t.dueDate,
+      })),
+    };
+  }
+
+  if (name === "update_task") {
+    if (!input.id) return { success: false, error: "Task ID is required." };
+    const { id, status, ...patch } = input;
+    if (status) return await changeTaskStatus(id, status);
+    return await updateTask(id, patch);
+  }
+
+  if (name === "get_divisions") {
+    const divisions = await getDivisions();
+    return { total: divisions.length, divisions };
+  }
+
+  if (name === "update_division") {
+    if (!input.oldName?.trim() || !input.newName?.trim()) {
+      return { success: false, error: "Both oldName and newName are required." };
+    }
+    return await renameDivision(input.oldName.trim(), input.newName.trim());
+  }
+
+  if (name === "get_branches") {
+    const branches = await getBranches();
+    return { total: branches.length, branches };
+  }
+
+  if (name === "update_branch") {
+    if (!input.oldName?.trim() || !input.newName?.trim()) {
+      return { success: false, error: "Both oldName and newName are required." };
+    }
+    return await renameBranch(input.oldName.trim(), input.newName.trim());
   }
 
   if (name === "add_division") {
