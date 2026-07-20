@@ -38,7 +38,7 @@ const supabase = createClient(url, serviceKey, { auth: { autoRefreshToken: false
 
 // Child tables first, parents last — respects FK constraints.
 const TABLES_IN_DELETE_ORDER = [
-  "task_notifications",
+  "notifications",
   "task_audit_log",
   "task_chats",
   "tasks",

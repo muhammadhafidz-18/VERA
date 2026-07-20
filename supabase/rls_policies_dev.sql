@@ -22,7 +22,7 @@ begin
     select unnest(array[
       'divisions', 'branches', 'roles', 'employees',
       'meetings', 'meeting_attendees',
-      'tasks', 'task_chats', 'task_audit_log', 'task_notifications',
+      'tasks', 'task_chats', 'task_audit_log', 'notifications',
       'integration_settings', 'vera_conversations'
     ])
   loop
