@@ -143,13 +143,16 @@ create table task_audit_log (
   created_at timestamptz not null default now()
 );
 
-create table task_notifications (
+create table notifications (
   id uuid primary key default gen_random_uuid(),
   task_id uuid references tasks(id) on delete cascade,
+  meeting_id uuid references meetings(id) on delete set null,
   recipient_id uuid not null references employees(id) on delete cascade,
   message text not null,
   is_read boolean not null default false,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+
+  constraint notifications_target_check check (task_id is not null or meeting_id is not null)
 );
 
 create index idx_tasks_status on tasks(status);

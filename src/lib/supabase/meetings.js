@@ -1,6 +1,7 @@
 // src/lib/supabase/meetings.js
 import { createClient } from "./server";
 import { getCurrentEmployee } from "./currentUser";
+import { notifyMeetingParticipants } from "./notifications";
 
 const MEETING_SELECT = `
   meeting_code, title, date, time, location, description,
@@ -103,6 +104,12 @@ export async function createMeeting(input) {
 
   const { data: full } = await supabase.from("meetings").select(MEETING_SELECT).eq("id", inserted.id).single();
 
+  await notifyMeetingParticipants(
+    supabase,
+    inserted.id,
+    `You've been invited to "${input.title}" on ${input.date} at ${input.time}`,
+    current?.uuid
+  );
   return {
     success: true,
     meeting: mapMeetingRow(full),
@@ -151,6 +158,13 @@ export async function updateMeeting(id, patch) {
     }
   }
 
+  await notifyMeetingParticipants(
+    supabase,
+    meetingRow.id,
+    `Meeting "${full.title}" was updated (${full.date} ${(full.time || "").slice(0, 5)})`,
+    current?.uuid
+  );
+
   const { data: full } = await supabase.from("meetings").select(MEETING_SELECT).eq("id", meetingRow.id).single();
   return { success: true, meeting: mapMeetingRow(full) };
 }
@@ -161,7 +175,7 @@ export async function deleteMeeting(id) {
 
   const { data: meetingRow, error: findError } = await supabase
     .from("meetings")
-    .select("id, created_by")
+    .select("id, title, created_by")
     .eq("meeting_code", id)
     .maybeSingle();
 
@@ -171,6 +185,13 @@ export async function deleteMeeting(id) {
   if (meetingRow.created_by && current && meetingRow.created_by !== current.uuid) {
     return { success: false, error: "Only the meeting creator can delete this meeting.", forbidden: true };
   }
+
+  await notifyMeetingParticipants(
+    supabase,
+    meetingRow.id,
+    `Meeting "${meetingRow.title}" has been cancelled`,
+    current?.uuid
+  );
 
   const { error } = await supabase.from("meetings").delete().eq("id", meetingRow.id);
   if (error) return { success: false, error: error.message };

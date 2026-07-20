@@ -1,6 +1,7 @@
 // src/app/meetings/page.js
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import Icon from "@/lib/Icon";
 import MeetingCalendar from "@/components/meetings/MeetingCalendar";
@@ -11,9 +12,10 @@ import ConfirmModal from "@/components/shared/ConfirmModal";
 import { isoDate } from "@/lib/vera/meetingHelpers";
 import { loadSession } from "@/lib/session";
 import MeetingsPageSkeleton from "@/components/shared/skeletons/MeetingsPageSkeleton";
-import MeetingDetailModal from "@/components/meetings/MeetingDetailModal"; // tambah import
+import MeetingDetailModal from "@/components/meetings/MeetingDetailModal";
 
-export default function MeetingsPage() {
+function MeetingsPageInner() {
+  const searchParams = useSearchParams();
   const [meetings, setMeetings] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -30,17 +32,29 @@ export default function MeetingsPage() {
   const [viewingMeeting, setViewingMeeting] = useState(null);
 
   useEffect(() => {
-  async function load() {
-    const [mRes, eRes] = await Promise.all([
-      fetch("/api/meetings").then((r) => r.json()),
-      fetch("/api/employees").then((r) => r.json()),
-    ]);
-    setMeetings(mRes.meetings || []);
-    setEmployees(eRes.employees || []);
-    setLoading(false);
+    async function load() {
+      const [mRes, eRes] = await Promise.all([
+        fetch("/api/meetings").then((r) => r.json()),
+        fetch("/api/employees").then((r) => r.json()),
+      ]);
+      setMeetings(mRes.meetings || []);
+      setEmployees(eRes.employees || []);
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  // If we arrived here from a notification click (?openMeeting=MTG-xx), jump
+  // straight into that meeting's detail modal once the list has loaded.
+  useEffect(() => {
+  if (loading) return;
+  const openMeetingId = searchParams.get("openMeeting");
+  if (openMeetingId) {
+    const match = meetings.find((m) => m.id === openMeetingId);
+    if (match) setViewingMeeting(match);
   }
-  load();
-}, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [loading]);
 
   const todayIso = isoDate(new Date());
   const upcoming = meetings.filter((m) => m && m.date >= todayIso).length;
@@ -168,7 +182,7 @@ export default function MeetingsPage() {
             onSave={handleSave}
           />
         )}
-        
+
         {viewingMeeting && (
           <MeetingDetailModal
             meeting={viewingMeeting}
@@ -206,5 +220,15 @@ export default function MeetingsPage() {
         )}
       </div>
     </DashboardLayout>
+  );
+}
+
+// useSearchParams() requires a Suspense boundary during static generation —
+// without this wrapper, `next build` fails even though `next dev` works fine.
+export default function MeetingsPage() {
+  return (
+    <Suspense fallback={<MeetingsPageSkeleton />}>
+      <MeetingsPageInner />
+    </Suspense>
   );
 }

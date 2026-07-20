@@ -58,7 +58,8 @@ export default function Topbar({ onLogout, user }) {
     await fetch("/api/notifications", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: notif.id }) });
     setNotifications((prev) => prev.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n)));
     setShowNotifPanel(false);
-    if (notif.taskId) router.push(`/tasks?openTask=${encodeURIComponent(notif.taskId)}`);
+    if (notif.taskCode) router.push(`/tasks?openTask=${encodeURIComponent(notif.taskCode)}`);
+    else if (notif.meetingCode) router.push(`/meetings?openMeeting=${encodeURIComponent(notif.meetingCode)}`);
   }
 
   const displayName = user?.name || "Unknown";
