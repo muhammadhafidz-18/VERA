@@ -2,6 +2,7 @@
 "use client";
 import { useState } from "react";
 import Icon from "@/lib/Icon";
+import Link from "next/link";
 import AuthShell from "./AuthShell";
 import { employees } from "@/lib/vera/store";
 import { signInWithPassword } from "@/lib/supabase/auth";
@@ -126,9 +127,7 @@ export default function LoginScreen({ onLogin, onForgotPassword }) {
 
       <div className="login-signup-row">
         New to V.E.R.A?{" "}
-        <a href="#" onClick={(e) => e.preventDefault()}>
-          Explore our Features
-        </a>{" "}
+        <Link href="/explore-features">Explore our Features</Link>{" "}
         ·{" "}
         <a href="#" onClick={(e) => e.preventDefault()}>
           Sign Up for an Account
