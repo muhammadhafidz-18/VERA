@@ -3,11 +3,19 @@
 import { useState } from "react";
 import Icon from "@/lib/Icon";
 
+function nextEmployeeId(employees) {
+  const nums = employees
+    .map((e) => parseInt(String(e.id).replace(/[^0-9]/g, ""), 10))
+    .filter((n) => !isNaN(n));
+  const next = (nums.length ? Math.max(...nums) : 0) + 1;
+  return `EMP-${String(next).padStart(4, "0")}`;
+}
+
 export default function EmployeeFormModal({ initialData, onClose, onSave, divisions, branches, employees = [] }) {
   const isEdit = !!initialData;
   const [form, setForm] = useState(
     initialData || {
-      id: "",
+      id: nextEmployeeId(employees),
       name: "",
       email: "",
       role: "User",
@@ -20,9 +28,6 @@ export default function EmployeeFormModal({ initialData, onClose, onSave, divisi
       address: "",
     }
   );
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
 
   const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
@@ -42,19 +47,14 @@ export default function EmployeeFormModal({ initialData, onClose, onSave, divisi
       return;
     }
 
-    if (!isEdit) {
-      if (!password || password.length < 8) {
-        setError("Password must be at least 8 characters.");
-        return;
-      }
-      if (password !== confirmPassword) {
-        setError("Passwords do not match.");
-        return;
-      }
+    const isDuplicateId = employees.some((e) => e.id.toLowerCase() === form.id.trim().toLowerCase() && (!isEdit || e.id !== initialData.id));
+    if (isDuplicateId) {
+      setError(`Employee ID "${form.id}" is already used by another employee.`);
+      return;
     }
 
     setError("");
-    onSave(isEdit ? form : { ...form, password }, isEdit);
+    onSave({ ...form, id: form.id.trim() }, isEdit);
   };
 
   return (
@@ -67,10 +67,22 @@ export default function EmployeeFormModal({ initialData, onClose, onSave, divisi
           </button>
         </div>
         <div className="modal-body">
+          {!isEdit && (
+            <div className="card-note" style={{ marginBottom: 16 }}>
+              This employee won&rsquo;t be able to log in yet. After saving, go to <b>Settings → User Management</b> and click <b>Invite</b> to send them a login setup email.
+            </div>
+          )}
+
           <div className="form-row two">
             <div>
               <label className="form-label">Employee ID *</label>
-              <input className="input" value={form.id} onChange={update("id")} placeholder="EMP-0016" disabled={isEdit} />
+              <input
+                className="input"
+                value={form.id}
+                onChange={update("id")}
+                placeholder="EMP-0016"
+                disabled={isEdit}
+              />
             </div>
             <div>
               <label className="form-label">Name *</label>
@@ -90,42 +102,6 @@ export default function EmployeeFormModal({ initialData, onClose, onSave, divisi
               </select>
             </div>
           </div>
-
-          {!isEdit && (
-            <div className="form-row two">
-              <div>
-                <label className="form-label">Password *</label>
-                <div className="login-field-wrap" style={{ margin: 0 }}>
-                  <input
-                    className="login-field-input"
-                    style={{ paddingLeft: 13 }}
-                    type={showPassword ? "text" : "password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="At least 8 characters"
-                  />
-                  <button
-                    type="button"
-                    className="login-field-icon-btn"
-                    onClick={() => setShowPassword((v) => !v)}
-                    tabIndex={-1}
-                  >
-                    <Icon name={showPassword ? "eye-off" : "eye"} size={14} />
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label className="form-label">Confirm Password *</label>
-                <input
-                  type={showPassword ? "text" : "password"}
-                  className="input"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Re-enter password"
-                />
-              </div>
-            </div>
-          )}
 
           <div className="form-row two">
             <div>
