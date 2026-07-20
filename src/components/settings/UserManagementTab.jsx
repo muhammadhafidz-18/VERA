@@ -7,6 +7,18 @@ import EditRoleModal from "./EditRoleModal";
 import { PAGE_SIZE } from "@/lib/vera/employeeHelpers";
 import { requestPasswordReset } from "@/lib/supabase/auth";
 
+// Response body isn't always JSON (a crashed route can return an empty body
+// or an HTML error page) — res.json() throws in that case. Parse
+// defensively so the UI can always show *some* error message instead of
+// crashing with "Unexpected end of JSON input".
+async function safeJson(res) {
+  try {
+    return await res.json();
+  } catch (err) {
+    return { error: `Server returned an unexpected response (status ${res.status}).` };
+  }
+}
+
 export default function UserManagementTab() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -20,22 +32,25 @@ export default function UserManagementTab() {
     load();
   }, []);
 
-  function load() {
+  async function load() {
     setLoading(true);
-    fetch("/api/employees")
-      .then((r) => r.json())
-      .then((data) => {
-        setUsers(
-          (data.employees || []).map((e) => ({
-            id: e.id,
-            name: e.name,
-            email: e.email,
-            role: e.role,
-            authUserId: e.authUserId,
-          }))
-        );
-        setLoading(false);
-      });
+    try {
+      const res = await fetch("/api/employees");
+      const data = await safeJson(res);
+      setUsers(
+        (data.employees || []).map((e) => ({
+          id: e.id,
+          name: e.name,
+          email: e.email,
+          role: e.role,
+          authUserId: e.authUserId,
+        }))
+      );
+    } catch (err) {
+      showToast("Failed to load employees.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   const showToast = (msg) => {
@@ -52,44 +67,70 @@ export default function UserManagementTab() {
 
   const handleDelete = async (id) => {
     if (!confirm(`Deactivate access for ${id}?`)) return;
-    const res = await fetch(`/api/employees/${encodeURIComponent(id)}`, { method: "DELETE" });
-    if (res.ok) setUsers((list) => list.filter((u) => u.id !== id));
+    try {
+      const res = await fetch(`/api/employees/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (res.ok) {
+        setUsers((list) => list.filter((u) => u.id !== id));
+      } else {
+        const data = await safeJson(res);
+        showToast(data.error || "Failed to deactivate employee.");
+      }
+    } catch (err) {
+      showToast("Network error while deactivating employee.");
+    }
   };
 
   const handleSaveRole = async (id, newRole) => {
-    const res = await fetch(`/api/employees/${encodeURIComponent(id)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role: newRole }),
-    });
-    if (res.ok) {
-      setUsers((list) => list.map((u) => (u.id === id ? { ...u, role: newRole } : u)));
-      setEditing(null);
+    try {
+      const res = await fetch(`/api/employees/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: newRole }),
+      });
+      if (res.ok) {
+        setUsers((list) => list.map((u) => (u.id === id ? { ...u, role: newRole } : u)));
+        setEditing(null);
+      } else {
+        const data = await safeJson(res);
+        showToast(data.error || "Failed to update role.");
+      }
+    } catch (err) {
+      showToast("Network error while updating role.");
     }
   };
 
   const handleInvite = async (user) => {
     setBusyId(user.id);
-    const res = await fetch("/api/employees/invite", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: user.id }),
-    });
-    const data = await res.json();
-    setBusyId(null);
-    if (!res.ok) {
-      showToast(data.error || "Failed to send invite.");
-      return;
+    try {
+      const res = await fetch("/api/employees/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: user.id }),
+      });
+      const data = await safeJson(res);
+      if (!res.ok) {
+        showToast(data.error || "Failed to send invite.");
+        return;
+      }
+      showToast(`Invite sent to ${user.email}.`);
+      load();
+    } catch (err) {
+      showToast("Network error while sending invite.");
+    } finally {
+      setBusyId(null);
     }
-    showToast(`Invite sent to ${user.email}.`);
-    load();
   };
 
   const handleResend = async (user) => {
     setBusyId(user.id);
-    const { error } = await requestPasswordReset(user.email);
-    setBusyId(null);
-    showToast(error ? error : `Login setup link resent to ${user.email}.`);
+    try {
+      const { error } = await requestPasswordReset(user.email);
+      showToast(error ? error : `Login setup link resent to ${user.email}.`);
+    } catch (err) {
+      showToast("Network error while resending invite.");
+    } finally {
+      setBusyId(null);
+    }
   };
 
   if (loading) return <div style={{ padding: 24, color: "var(--text3)" }}>Loading...</div>;
