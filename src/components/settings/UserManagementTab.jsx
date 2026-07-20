@@ -5,6 +5,7 @@ import Icon from "@/lib/Icon";
 import Pagination from "@/components/employees/Pagination";
 import EditRoleModal from "./EditRoleModal";
 import { PAGE_SIZE } from "@/lib/vera/employeeHelpers";
+import { requestPasswordReset } from "@/lib/supabase/auth";
 
 export default function UserManagementTab() {
   const [users, setUsers] = useState([]);
@@ -12,15 +13,35 @@ export default function UserManagementTab() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+  const [toast, setToast] = useState("");
 
   useEffect(() => {
+    load();
+  }, []);
+
+  function load() {
+    setLoading(true);
     fetch("/api/employees")
       .then((r) => r.json())
       .then((data) => {
-        setUsers((data.employees || []).map((e) => ({ id: e.id, name: e.name, email: e.email, role: e.role })));
+        setUsers(
+          (data.employees || []).map((e) => ({
+            id: e.id,
+            name: e.name,
+            email: e.email,
+            role: e.role,
+            authUserId: e.authUserId,
+          }))
+        );
         setLoading(false);
       });
-  }, []);
+  }
+
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(""), 3000);
+  };
 
   const filtered = users.filter(
     (u) => u.name.toLowerCase().includes(search.toLowerCase()) || u.id.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase())
@@ -45,6 +66,30 @@ export default function UserManagementTab() {
       setUsers((list) => list.map((u) => (u.id === id ? { ...u, role: newRole } : u)));
       setEditing(null);
     }
+  };
+
+  const handleInvite = async (user) => {
+    setBusyId(user.id);
+    const res = await fetch("/api/employees/invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: user.id }),
+    });
+    const data = await res.json();
+    setBusyId(null);
+    if (!res.ok) {
+      showToast(data.error || "Failed to send invite.");
+      return;
+    }
+    showToast(`Invite sent to ${user.email}.`);
+    load();
+  };
+
+  const handleResend = async (user) => {
+    setBusyId(user.id);
+    const { error } = await requestPasswordReset(user.email);
+    setBusyId(null);
+    showToast(error ? error : `Login setup link resent to ${user.email}.`);
   };
 
   if (loading) return <div style={{ padding: 24, color: "var(--text3)" }}>Loading...</div>;
@@ -75,13 +120,14 @@ export default function UserManagementTab() {
               <th>Name</th>
               <th>Email</th>
               <th>Role</th>
+              <th>Status</th>
               <th>Action</th>
             </tr>
           </thead>
           <tbody>
             {paged.length === 0 && (
               <tr>
-                <td colSpan={5} style={{ textAlign: "center", padding: "32px 16px", color: "var(--text3)" }}>
+                <td colSpan={6} style={{ textAlign: "center", padding: "32px 16px", color: "var(--text3)" }}>
                   No Data Available
                 </td>
               </tr>
@@ -95,6 +141,22 @@ export default function UserManagementTab() {
                   <span className={`badge ${u.role === "Superadmin" ? "purple" : "gray"}`}>{u.role}</span>
                 </td>
                 <td>
+                  <span className={`badge ${u.authUserId ? "green" : "yellow"}`}>
+                    {u.authUserId ? "Invited" : "Not Invited"}
+                  </span>
+                </td>
+                <td style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  {!u.authUserId ? (
+                    <button className="btn btn-secondary btn-sm" disabled={busyId === u.id} onClick={() => handleInvite(u)}>
+                      {busyId === u.id ? <Icon name="refresh" size={12} className="spin" /> : <Icon name="send" size={12} />}
+                      Invite
+                    </button>
+                  ) : (
+                    <button className="btn btn-secondary btn-sm" disabled={busyId === u.id} onClick={() => handleResend(u)}>
+                      {busyId === u.id ? <Icon name="refresh" size={12} className="spin" /> : <Icon name="refresh" size={12} />}
+                      Resend
+                    </button>
+                  )}
                   <button className="btn-icon" title="Edit Role" onClick={() => setEditing(u)}>
                     <Icon name="pencil" size={13} />
                   </button>
@@ -109,6 +171,11 @@ export default function UserManagementTab() {
         <Pagination page={currentPage} totalPages={totalPages} setPage={setPage} total={filtered.length} pageSize={PAGE_SIZE} />
       </div>
       {editing && <EditRoleModal employee={editing} onClose={() => setEditing(null)} onSave={handleSaveRole} />}
+      {toast && (
+        <div className="toast">
+          <b>&#10003;</b> {toast}
+        </div>
+      )}
     </div>
   );
 }
