@@ -1,22 +1,35 @@
-// src/lib/chatbase.js — ported from the HTML prototype.
-// SECURITY NOTE: same caveat as ElevenLabs — API key lives in localStorage
-// and this calls Chatbase directly from the browser. Fine for solo testing,
-// not safe for real multi-user production (move to a server route first).
-const VERA_CHATBASE_CONFIG_KEY = "vera_chatbase_config_v1";
-
-export function getChatbaseConfig() {
+// src/lib/chatbase.js
+// Config now stored server-side in Supabase (integration_settings table),
+// shared across every user, instead of per-browser localStorage.
+// callChatbase() itself has no browser-only dependencies, so it's used both
+// client-side (for the Settings "Test" button) and server-side (by
+// executeTool.js, for the search_product_knowledge Ask V.E.R.A tool).
+export async function getChatbaseConfig() {
   try {
-    const raw = localStorage.getItem(VERA_CHATBASE_CONFIG_KEY);
-    return raw ? JSON.parse(raw) : { enabled: false, apiKey: "", chatbotId: "" };
+    const res = await fetch("/api/settings/integrations/chatbase");
+    if (!res.ok) throw new Error("Failed to load config");
+    const data = await res.json();
+    return data.config;
   } catch (err) {
     return { enabled: false, apiKey: "", chatbotId: "" };
   }
 }
 
-export function saveChatbaseConfig(config) {
+export async function saveChatbaseConfig(config) {
   try {
-    localStorage.setItem(VERA_CHATBASE_CONFIG_KEY, JSON.stringify(config));
-  } catch (err) {}
+    const res = await fetch("/api/settings/integrations/chatbase", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return { success: false, error: data.error || "Failed to save." };
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: "Failed to save." };
+  }
 }
 
 export async function callChatbase(question, apiKey, chatbotId) {

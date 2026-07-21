@@ -59,10 +59,8 @@ function speakWithBrowser(text, langOverride) {
   }
 }
 
-// TODO: once ElevenLabs is wired through a server API route, try that first
-// here (same pattern as the prototype's speak()), falling back to browser TTS.
 export async function speak(text, onEnd, langOverride) {
-  const config = getVeraVoiceConfig();
+  const config = await getVeraVoiceConfig();
   if (config.enabled && config.apiKey && config.voiceId) {
     try {
       await speakWithElevenLabs(text, config.apiKey, config.voiceId);
@@ -77,27 +75,37 @@ export async function speak(text, onEnd, langOverride) {
 }
 
 // ---------------------------------------------------------------------
-// ElevenLabs (Voice AI) config — ported from the HTML prototype.
-// SECURITY NOTE: this stores the API key in localStorage and calls
-// ElevenLabs directly from the browser, same as the prototype did. This is
-// fine for solo testing but NOT safe for a real multi-user deployment — the
-// key should move to a server API route before going to production.
+// ElevenLabs (Voice AI) config — now stored server-side in Supabase
+// (integration_settings table), shared across every user, instead of
+// per-browser localStorage. speakWithElevenLabs() itself still runs from
+// the browser (needs mic/audio playback), only the config storage moved.
 // ---------------------------------------------------------------------
-const VERA_VOICE_CONFIG_KEY = "vera_voice_config_v1";
-
-export function getVeraVoiceConfig() {
+export async function getVeraVoiceConfig() {
   try {
-    const raw = localStorage.getItem(VERA_VOICE_CONFIG_KEY);
-    return raw ? JSON.parse(raw) : { enabled: false, apiKey: "", voiceId: "" };
+    const res = await fetch("/api/settings/integrations/elevenlabs");
+    if (!res.ok) throw new Error("Failed to load config");
+    const data = await res.json();
+    return data.config;
   } catch (err) {
     return { enabled: false, apiKey: "", voiceId: "" };
   }
 }
 
-export function saveVeraVoiceConfig(config) {
+export async function saveVeraVoiceConfig(config) {
   try {
-    localStorage.setItem(VERA_VOICE_CONFIG_KEY, JSON.stringify(config));
-  } catch (err) {}
+    const res = await fetch("/api/settings/integrations/elevenlabs", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return { success: false, error: data.error || "Failed to save." };
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: "Failed to save." };
+  }
 }
 
 export function speakWithElevenLabs(text, apiKey, voiceId) {

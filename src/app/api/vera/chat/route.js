@@ -4,6 +4,7 @@ import { VERA_TOOLS } from "@/lib/vera/tools";
 import { buildVeraSystemPrompt } from "@/lib/vera/systemPrompt";
 import { executeVeraTool } from "@/lib/vera/executeTool";
 import { getDivisions, getBranches } from "@/lib/supabase/directory";
+import { getIntegrationConfig } from "@/lib/supabase/integrations";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-4-6";
@@ -16,7 +17,6 @@ const VERA_TOOL_OPERATION_TYPE = {
   add_division: "INSERT",
   add_branch: "INSERT",
   update_employee: "UPDATE",
-  update_meeting: "UPDATE",
   update_task: "UPDATE",
   update_division: "UPDATE",
   update_branch: "UPDATE",
@@ -25,6 +25,7 @@ const VERA_TOOL_OPERATION_TYPE = {
   get_tasks: "READ",
   get_divisions: "READ",
   get_branches: "READ",
+  search_product_knowledge: "READ",
   logout: "SESSION",
   reset_conversation: "SESSION",
 };
@@ -80,7 +81,9 @@ export async function POST(request) {
 
     const divisions = await getDivisions();
     const branches = await getBranches();
-    const systemPrompt = buildVeraSystemPrompt(divisions, branches);
+    const chatbaseConfig = await getIntegrationConfig("chatbase");
+    const productKnowledgeEnabled = !!(chatbaseConfig?.enabled && chatbaseConfig?.apiKey && chatbaseConfig?.chatbotId);
+    const systemPrompt = buildVeraSystemPrompt(divisions, branches, productKnowledgeEnabled);
 
     const lastUserMsg = [...history].reverse().find((m) => m.role === "user");
     const lastUserWasConfirmation =
@@ -159,7 +162,7 @@ export async function POST(request) {
 
       const toolResults = [];
       for (const tu of toolUses) {
-        const result = await executeVeraTool(tu.name, tu.input || {});
+        const result = await executeVeraTool(tu.name, tu.input || {}, { chatbaseConfig });
         if (tu.name === "logout" && result.success) logoutRequested = true;
         if (tu.name === "reset_conversation" && result.success) resetRequested = true;
         if (result.success) {

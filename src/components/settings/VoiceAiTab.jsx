@@ -6,18 +6,31 @@ import { getVeraVoiceConfig, saveVeraVoiceConfig, speakWithElevenLabs } from "@/
 
 export default function VoiceAiTab() {
   const [config, setConfig] = useState({ enabled: false, apiKey: "", voiceId: "" });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [testing, setTesting] = useState(false);
   const [testError, setTestError] = useState("");
 
   useEffect(() => {
-    setConfig(getVeraVoiceConfig());
+    getVeraVoiceConfig().then((c) => {
+      setConfig(c);
+      setLoading(false);
+    });
   }, []);
 
   const update = (field) => (e) => setConfig((c) => ({ ...c, [field]: e.target.value }));
 
-  const handleSave = () => {
-    saveVeraVoiceConfig(config);
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveError("");
+    const result = await saveVeraVoiceConfig(config);
+    setSaving(false);
+    if (!result.success) {
+      setSaveError(result.error || "Gagal menyimpan.");
+      return;
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
@@ -38,8 +51,12 @@ export default function VoiceAiTab() {
   return (
     <div style={{ maxWidth: 560 }}>
       <div className="card-note" style={{ marginBottom: 18 }}>
-        <b>Catatan keamanan:</b> API Key di bawah ini disimpan di browser kamu (localStorage), bukan di server. Cocok untuk testing/demo — tapi kalau nanti di-deploy untuk banyak user, key ini sebaiknya dipindah ke backend, karena siapa pun yang buka DevTools browser bisa melihatnya.
+        <b>Catatan:</b> API Key ini sekarang disimpan di server (Supabase), berlaku untuk semua user — bukan lagi
+        per-browser. RLS masih permisif untuk semua akun yang login (belum dibatasi khusus Superadmin) — perketat ini
+        sebelum production.
       </div>
+
+      {loading && <p style={{ fontSize: 13, color: "var(--text3)" }}>Loading...</p>}
 
       <div className="form-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--bg3)", padding: "12px 14px", borderRadius: 10 }}>
         <div>
@@ -63,6 +80,11 @@ export default function VoiceAiTab() {
         <p style={{ fontSize: 11, color: "var(--text3)", marginTop: 6 }}>Ambil Voice ID dari dashboard ElevenLabs kamu (menu Voices → pilih voice → copy ID).</p>
       </div>
 
+      {saveError && (
+        <div className="form-error" style={{ marginBottom: 14 }}>
+          {saveError}
+        </div>
+      )}
       {testError && (
         <div className="form-error" style={{ marginBottom: 14 }}>
           {testError}
@@ -74,8 +96,8 @@ export default function VoiceAiTab() {
           {testing ? <Icon name="refresh" size={13} className="spin" /> : <Icon name="microphone" size={13} />}
           {testing ? "Memutar..." : "Test Voice"}
         </button>
-        <button className="btn btn-primary" onClick={handleSave}>
-          {saved ? "Tersimpan!" : "Save"}
+        <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+          {saving ? "Menyimpan..." : saved ? "Tersimpan!" : "Save"}
         </button>
       </div>
     </div>
