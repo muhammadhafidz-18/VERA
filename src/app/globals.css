@@ -592,7 +592,7 @@ select.input{cursor:pointer}
 .vera-replay-btn{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);color:#fff;padding:6px 12px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0;position:relative;z-index:1;transition:background .15s ease}
 .vera-replay-btn:hover{background:rgba(255,255,255,.24)}
 @keyframes vera-pulse{0%{box-shadow:0 0 0 0 rgba(74,222,128,.6)}70%{box-shadow:0 0 0 6px rgba(74,222,128,0)}100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}}
-
+.vera-hero-compact{padding:8px 12px;margin-bottom:8px;justify-content:flex-end}
 .vera-chat-card{flex:1;display:flex;flex-direction:column;background:var(--bg2);border:1px solid var(--border);clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px);filter:drop-shadow(0 1px 2px rgba(16,24,40,.08)) drop-shadow(0 10px 22px rgba(29,95,160,.18)) drop-shadow(0 24px 44px rgba(29,95,160,.12));padding:18px 18px 14px;overflow:hidden;min-height:0;transition:filter .2s ease}
 
 /* ---------- Command suggestion cards (glass, matches reference) ---------- */

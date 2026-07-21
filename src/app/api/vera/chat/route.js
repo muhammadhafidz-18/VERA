@@ -8,7 +8,7 @@ import { getIntegrationConfig } from "@/lib/supabase/integrations";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-4-6";
-const MAX_TURNS = 5;
+const MAX_TURNS = 8;
 
 const VERA_TOOL_OPERATION_TYPE = {
   create_employee: "INSERT",
@@ -83,7 +83,25 @@ export async function POST(request) {
     const branches = await getBranches();
     const chatbaseConfig = await getIntegrationConfig("chatbase");
     const productKnowledgeEnabled = !!(chatbaseConfig?.enabled && chatbaseConfig?.apiKey && chatbaseConfig?.chatbotId);
-    const systemPrompt = buildVeraSystemPrompt(divisions, branches, productKnowledgeEnabled);
+
+    const now = new Date();
+    const jakartaFmt = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Jakarta",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }); // en-CA gives YYYY-MM-DD directly
+    const iso = jakartaFmt.format(now); // e.g. "2026-07-21"
+    const dayName = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jakarta", weekday: "long" }).format(now);
+    const humanId = new Intl.DateTimeFormat("id-ID", {
+      timeZone: "Asia/Jakarta",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(now);
+    const today = { iso, dayName, humanId };
+
+    const systemPrompt = buildVeraSystemPrompt(divisions, branches, productKnowledgeEnabled, today);
 
     const lastUserMsg = [...history].reverse().find((m) => m.role === "user");
     const lastUserWasConfirmation =
@@ -112,12 +130,28 @@ export async function POST(request) {
 
       if (toolUses.length === 0) {
         const text = content.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+
+        // A real create/update already succeeded earlier in this turn-chain —
+        // trust this wrap-up text as the final answer instead of running it
+        // through the dodge/stall heuristics below. Those heuristics exist to
+        // catch Claude avoiding work before anything real has happened; once
+        // the actual database change is done, second-guessing the follow-up
+        // text just causes false failures on genuinely successful requests.
+        if (dbOperationType) {
+          return NextResponse.json({
+            text: text || "Selesai.",
+            logoutRequested,
+            resetRequested,
+            dbOperationType,
+          });
+        }
+
         const looksLikePlaceholder = VERA_PLACEHOLDER_PATTERN.test(text);
         const looksLikeRawData = VERA_RAW_DATA_PATTERN.test(text);
         const looksLikeMeta = VERA_META_PATTERN.test(text);
         const looksLikeFalseSuccess = VERA_SUCCESS_CLAIM_PATTERN.test(text);
         const looksLikeDodgedConfirmation = lastUserWasConfirmation && !logoutRequested && !resetRequested;
-        const looksLikeUnverifiedSubmission = lastUserLooksLikeDataSubmission && !dbOperationType;
+        const looksLikeUnverifiedSubmission = lastUserLooksLikeDataSubmission;
         const isBad =
           looksLikePlaceholder ||
           looksLikeRawData ||
@@ -130,7 +164,7 @@ export async function POST(request) {
           const nudge = looksLikeUnverifiedSubmission
             ? "The user just gave you structured details (name/email/division/branch) to create a record, but no create tool has actually succeeded yet. Call the appropriate create tool right now with those exact details."
             : looksLikeDodgedConfirmation
-            ? "The user just confirmed an action you asked about. Don't reply with a generic acknowledgment — call the corresponding tool right now (e.g. reset_conversation or logout) to actually carry it out."
+            ? "The user just confirmed the action you asked about in your previous message. Don't reply with a generic acknowledgment — call the specific tool that matches what THAT confirmation was about (for example, if you asked to confirm a meeting update, call update_meeting; if it was about logging out, call logout) right now to actually carry it out."
             : looksLikeFalseSuccess
             ? "You just claimed something was added/created/scheduled, but you did NOT actually call the tool to do it. Call the correct tool for real right now."
             : looksLikeRawData
@@ -161,22 +195,47 @@ export async function POST(request) {
       }
 
       const toolResults = [];
+      let meetingWriteResult = null;
+      let meetingWriteVerb = null;
       for (const tu of toolUses) {
         const result = await executeVeraTool(tu.name, tu.input || {}, { chatbaseConfig });
+        console.log(`[VERA DEBUG] ${tu.name}`, JSON.stringify(tu.input), "=>", JSON.stringify(result));
         if (tu.name === "logout" && result.success) logoutRequested = true;
         if (tu.name === "reset_conversation" && result.success) resetRequested = true;
         if (result.success) {
           const opType = VERA_TOOL_OPERATION_TYPE[tu.name];
           if (opType === "INSERT" || opType === "UPDATE") dbOperationType = opType;
         }
+        if ((tu.name === "create_meeting" || tu.name === "update_meeting") && result.success && result.meeting) {
+          meetingWriteResult = result;
+          meetingWriteVerb = tu.name === "create_meeting" ? "dibuat" : "diupdate";
+        }
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(result) });
+      }
+
+      // Deterministic short-circuit: once a meeting create/update tool has
+      // actually succeeded, reply immediately using the tool's own data
+      // instead of asking the model for one more turn. This sidesteps
+      // models that keep re-verifying with get_meetings out of caution and
+      // burn through the turn budget before ever replying.
+      if (meetingWriteResult) {
+        const m = meetingWriteResult.meeting;
+        const attendeeCount = m.attendeeIds?.length || 0;
+        const attendeeText = attendeeCount > 0 ? ` Total peserta sekarang: ${attendeeCount} orang.` : "";
+        const conflictText = meetingWriteResult.schedule_conflict
+          ? " Catatan: ada bentrok jadwal dengan meeting lain di waktu yang sama."
+          : "";
+        const text = `Meeting "${m.title}" berhasil ${meetingWriteVerb} untuk ${m.date}, pukul ${m.startTime}–${m.endTime}${m.location ? ` di ${m.location}` : ""}.${attendeeText}${conflictText}`;
+        return NextResponse.json({ text, logoutRequested, resetRequested, dbOperationType });
       }
 
       messages = [...messages, { role: "assistant", content }, { role: "user", content: toolResults }];
     }
 
     return NextResponse.json({
-      text: "Maaf, permintaan ini butuh beberapa langkah dan belum selesai. Coba pertanyaan yang lebih spesifik.",
+      text: dbOperationType
+        ? "Perubahannya sudah tersimpan, tapi saya kehabisan giliran untuk merangkum hasilnya. Coba cek langsung di halaman terkait, atau tanya lagi untuk konfirmasi."
+        : "Maaf, permintaan ini butuh beberapa langkah dan belum selesai. Coba pertanyaan yang lebih spesifik.",
       logoutRequested,
       resetRequested,
       dbOperationType,

@@ -159,9 +159,28 @@ export async function updateMeeting(id, patch) {
   const { error: updateError } = await supabase.from("meetings").update(update).eq("id", meetingRow.id);
   if (updateError) return { success: false, error: updateError.message };
 
-  if (patch.attendeeIds !== undefined) {
+  if (patch.attendeeIds !== undefined || patch.attendeeNames !== undefined) {
+    let newCodes = patch.attendeeIds || [];
+    if (!newCodes.length && patch.attendeeNames?.length) {
+      const { data: allEmployees } = await supabase.from("employees").select("employee_code, name");
+      newCodes = patch.attendeeNames
+        .map((n) => (allEmployees || []).find((e) => e.name.toLowerCase().includes(n.toLowerCase())))
+        .filter(Boolean)
+        .map((e) => e.employee_code);
+    }
+
+    // Additive: "invite X" should add X to the meeting without removing
+    // whoever's already invited, so merge with the current attendee list
+    // instead of wiping it out.
+    const { data: existingRows } = await supabase
+      .from("meeting_attendees")
+      .select("employees ( employee_code )")
+      .eq("meeting_id", meetingRow.id);
+    const existingCodes = (existingRows || []).map((r) => r.employees?.employee_code).filter(Boolean);
+    const mergedCodes = Array.from(new Set([...existingCodes, ...newCodes]));
+
     await supabase.from("meeting_attendees").delete().eq("meeting_id", meetingRow.id);
-    const attendeeUuids = await resolveEmployeeUuids(supabase, patch.attendeeIds);
+    const attendeeUuids = await resolveEmployeeUuids(supabase, mergedCodes);
     if (attendeeUuids.length) {
       await supabase
         .from("meeting_attendees")

@@ -113,7 +113,7 @@ export const VERA_TOOLS = [
         endTime: { type: "string", description: "24-hour format HH:MM" },
         location: { type: "string" },
         description: { type: "string" },
-        attendeeNames: { type: "array", items: { type: "string" }, description: "Names of employees to invite" },
+        attendeeNames: { type: "array", items: { type: "string" }, description: "Names of employees to add as attendees. This ADDS to the existing attendee list — it does not remove anyone already invited." },
       },
       required: ["id"],
     },
@@ -177,5 +177,4 @@ export const VERA_TOOLS = [
     name: "reset_conversation",
     description: "Clear the current chat history in Ask V.E.R.A and start a fresh conversation. This cannot be undone — only call it after the user has clearly confirmed they want to reset/clear the conversation.",
     input_schema: { type: "object", properties: {} },
-  },
-];
+  },];

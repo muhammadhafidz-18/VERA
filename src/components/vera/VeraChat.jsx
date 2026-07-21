@@ -1,6 +1,6 @@
 // src/components/vera/VeraChat.jsx
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
 import Icon from "@/lib/Icon";
 import { speak, warmUpVoices } from "@/lib/voice";
 import { clearSession, loadSession } from "@/lib/session";
@@ -18,7 +18,7 @@ import {
   COMMAND_SUGGESTIONS,
 } from "@/lib/vera/chatHelpers";
 
-export default function VeraChat({ onLogout }) {
+const VeraChat = forwardRef(function VeraChat({ onLogout, compact = false, hideHeader = false }, ref) {
   const greeting = getVeraGreeting(loadSession()?.user?.name);
   const [messages, setMessages] = useState(() => loadVeraChatHistory() || [{ role: "assistant", text: greeting }]);
   const [input, setInput] = useState("");
@@ -26,6 +26,7 @@ export default function VeraChat({ onLogout }) {
   const [thinking, setThinking] = useState(false);
   const scrollRef = useRef(null);
   const recognitionRef = useRef(null);
+  const transcriptPartsRef = useRef([]);
 
   useEffect(() => {
     warmUpVoices();
@@ -59,6 +60,10 @@ export default function VeraChat({ onLogout }) {
     } catch (err) {}
     speak(greeting);
   };
+
+  useImperativeHandle(ref, () => ({
+    resetChat: handleResetChat,
+  }));
 
   const resetChatSilently = () => {
     const fresh = [{ role: "assistant", text: greeting }];
@@ -154,10 +159,18 @@ export default function VeraChat({ onLogout }) {
     }
     const recognition = new SpeechRecognitionAPI();
     recognition.lang = "id-ID";
+    recognition.continuous = true;
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
-    recognition.onstart = () => setRecording(true);
-    recognition.onend = () => setRecording(false);
+    recognition.onstart = () => {
+      transcriptPartsRef.current = [];
+      setRecording(true);
+    };
+    recognition.onend = () => {
+      setRecording(false);
+      const fullTranscript = transcriptPartsRef.current.join(" ").trim();
+      if (fullTranscript) sendText(fullTranscript, true);
+    };
     recognition.onerror = (e) => {
       setRecording(false);
       let msg = "Gagal merekam suara. Coba lagi, atau ketik pertanyaan kamu.";
@@ -169,8 +182,11 @@ export default function VeraChat({ onLogout }) {
       setMessages((m) => [...m, { role: "assistant", text: msg }]);
     };
     recognition.onresult = (e) => {
-      const transcript = e.results?.[0]?.[0]?.transcript;
-      if (transcript) sendText(transcript, true);
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          transcriptPartsRef.current.push(e.results[i][0].transcript);
+        }
+      }
     };
     recognitionRef.current = recognition;
     try {
@@ -184,22 +200,34 @@ export default function VeraChat({ onLogout }) {
   const isEmpty = messages.length <= 1;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 105px)", maxWidth: 720, width: "100%", margin: "0 auto" }}>
-      <div className="vera-hero">
-        <div className="vera-hero-icon-badge">
-          <Icon name="message-chatbot" size={17} style={{ color: "#fff" }} />
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: compact ? "100%" : "calc(100vh - 105px)",
+        maxWidth: compact ? "none" : 720,
+        width: "100%",
+        margin: compact ? 0 : "0 auto",
+        minHeight: 0,
+      }}
+    >
+      {!hideHeader && (
+        <div className="vera-hero">
+          <div className="vera-hero-icon-badge">
+            <Icon name="message-chatbot" size={17} style={{ color: "#fff" }} />
+          </div>
+          <div className="vera-hero-text">
+            <div className="vera-hero-title">Ask V.E.R.A</div>
+            <div className="vera-hero-sub">Type or talk directly — one door for all your operational needs.</div>
+          </div>
+          <button className="vera-replay-btn" onClick={handleResetChat} title="Hapus riwayat chat dan mulai dari awal">
+            <Icon name="refresh" size={12} /> Reset
+          </button>
+          <span className="vera-live-badge">
+            <span className="vera-live-dot" /> AI Active
+          </span>
         </div>
-        <div className="vera-hero-text">
-          <div className="vera-hero-title">Ask V.E.R.A</div>
-          <div className="vera-hero-sub">Type or talk directly — one door for all your operational needs.</div>
-        </div>
-        <button className="vera-replay-btn" onClick={handleResetChat} title="Hapus riwayat chat dan mulai dari awal">
-          <Icon name="refresh" size={12} /> Reset
-        </button>
-        <span className="vera-live-badge">
-          <span className="vera-live-dot" /> AI Active
-        </span>
-      </div>
+      )}
 
       {isEmpty && (
         <div className="suggestion-panel">
@@ -256,4 +284,6 @@ export default function VeraChat({ onLogout }) {
       </div>
     </div>
   );
-}
+});
+
+export default VeraChat;
