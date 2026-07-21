@@ -7,8 +7,8 @@ export async function GET() {
 
 export async function POST(request) {
   const body = await request.json();
-  if (!body.title || !body.date || !body.time) {
-    return NextResponse.json({ error: "Title, Date, and Time are required." }, { status: 400 });
+  if (!body.title || !body.date || !body.startTime || !body.endTime) {
+    return NextResponse.json({ error: "Title, Date, Start Time, and End Time are required." }, { status: 400 });
   }
   const result = await createMeeting(body);
   if (!result.success) return NextResponse.json(result, { status: 400 });

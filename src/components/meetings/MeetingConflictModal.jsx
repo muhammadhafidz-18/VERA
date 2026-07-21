@@ -32,7 +32,7 @@ export default function MeetingConflictModal({ meeting, conflicts, onClose }) {
               >
                 <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)" }}>{c.title}</div>
                 <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 2 }}>
-                  {c.time}
+                  {c.startTime}–{c.endTime}
                   {c.location ? ` · ${c.location}` : ""}
                 </div>
               </div>

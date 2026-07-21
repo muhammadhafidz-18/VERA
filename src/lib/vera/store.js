@@ -26,11 +26,10 @@ export let employees = [
 ];
 
 export let meetings = [
-  { id: "MTG-01", title: "Sync with HR team", date: "2026-07-20", time: "10:00", location: "Zoom", description: "Discuss new employee onboarding process updates.", attendeeIds: ["EMP-0002"] },
-  { id: "MTG-02", title: "Review Q3 Roadmap", date: "2026-07-22", time: "14:00", location: "Meeting Room A", description: "Review Q3 roadmap progress and Q4 priorities.", attendeeIds: ["EMP-0003", "EMP-0005"] },
-  { id: "MTG-03", title: "New employee onboarding", date: "2026-07-16", time: "09:00", location: "Zoom", description: "Introduction session for newly joined employees.", attendeeIds: [] },
-  { id: "MTG-04", title: "1:1 with manager", date: "2026-07-25", time: "11:00", location: "Meeting Room B", description: "Discuss this month's work progress.", attendeeIds: [] },
-  { id: "MTG-05", title: "All Hands Meeting", date: "2026-07-28", time: "13:00", location: "Auditorium", description: "Company update for all employees.", attendeeIds: [] },
+  { id: "MTG-02", title: "Review Q3 Roadmap", date: "2026-07-22", startTime: "10:00", endTime: "11:00", location: "Meeting Room A", description: "Review Q3 roadmap progress and Q4 priorities.", attendeeIds: ["EMP-0003", "EMP-0005"] },
+  { id: "MTG-03", title: "New employee onboarding", date: "2026-07-16", startTime: "10:00", endTime: "11:00", location: "Zoom", description: "Introduction session for newly joined employees.", attendeeIds: [] },
+  { id: "MTG-04", title: "1:1 with manager", date: "2026-07-25", startTime: "10:00", endTime: "11:00", location: "Meeting Room B", description: "Discuss this month's work progress.", attendeeIds: [] },
+  { id: "MTG-05", title: "All Hands Meeting", date: "2026-07-28", startTime: "10:00", endTime: "11:00", location: "Auditorium", description: "Company update for all employees.", attendeeIds: [] },
 ];
 
 export let tasks = [

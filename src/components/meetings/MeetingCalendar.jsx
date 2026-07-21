@@ -53,7 +53,7 @@ export default function MeetingCalendar({ meetings, onDayClick, onEventClick }) 
           const inMonth = d.getMonth() === anchor.getMonth();
           const iso = isoDate(d);
           const isToday = iso === todayIso;
-          const evs = (eventsByDate[iso] || []).slice().sort((a, b) => a.time.localeCompare(b.time));
+          const evs = (eventsByDate[iso] || []).slice().sort((a, b) => a.startTime.localeCompare(b.startTime));
           return (
             <div key={i} className={`cal-cell${inMonth ? "" : " out"}${isToday ? " today" : ""}`} onClick={() => onDayClick(iso)}>
               <span className={`cal-daynum${isToday ? " today" : ""}`}>{d.getDate()}</span>

@@ -1,5 +1,5 @@
 // src/lib/vera/executeTool.js
-import { getMeetings, createMeeting } from "@/lib/supabase/meetings";
+import { getMeetings, createMeeting, updateMeeting } from "@/lib/supabase/meetings";
 import { getTasks, createTask, updateTask, changeTaskStatus } from "@/lib/supabase/tasks";
 import {
   getEmployees,
@@ -44,6 +44,12 @@ export async function executeVeraTool(name, input) {
       return { success: false, error: "Missing required fields (title, date, time)." };
     }
     return await createMeeting(input);
+    
+  }
+    if (name === "update_meeting") {
+    if (!input.id) return { success: false, error: "Meeting ID is required." };
+    const { id, ...patch } = input;
+    return await updateMeeting(id, patch);
   }
 
   if (name === "create_task") {

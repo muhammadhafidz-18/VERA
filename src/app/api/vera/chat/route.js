@@ -16,6 +16,7 @@ const VERA_TOOL_OPERATION_TYPE = {
   add_division: "INSERT",
   add_branch: "INSERT",
   update_employee: "UPDATE",
+  update_meeting: "UPDATE",
   update_task: "UPDATE",
   update_division: "UPDATE",
   update_branch: "UPDATE",

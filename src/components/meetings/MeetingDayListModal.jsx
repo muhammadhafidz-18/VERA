@@ -6,7 +6,7 @@ import { meetingColor } from "@/lib/vera/meetingHelpers";
 export default function MeetingDayListModal({ date, meetings, currentUserId, onClose, onSelectMeeting, onDeleteMeeting, onAddMeeting }) {
   const dateObj = new Date(date + "T00:00:00");
   const label = dateObj.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-  const sorted = meetings.slice().sort((a, b) => a.time.localeCompare(b.time));
+  const sorted = meetings.slice().sort((a, b) => a.startTime.localeCompare(b.startTime));
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -44,7 +44,10 @@ export default function MeetingDayListModal({ date, meetings, currentUserId, onC
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)" }}>
-                      <span style={{ color: col, fontFamily: "'DM Mono',monospace" }}>{m.time}</span> {m.title}
+                      <span style={{ color: col, fontFamily: "'DM Mono',monospace" }}>
+                        {m.startTime}–{m.endTime}
+                      </span>{" "}
+                      {m.title}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 2 }}>
                       {m.location && <span>{m.location} · </span>}

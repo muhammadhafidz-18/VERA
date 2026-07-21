@@ -2,7 +2,7 @@
 "use client";
 import Icon from "@/lib/Icon";
 import TaskAvatar from "@/components/shared/TaskAvatar";
-import { meetingColor, isMeetingLink, formatMeetingTime12h } from "@/lib/vera/meetingHelpers";
+import { meetingColor, isMeetingLink, formatMeetingTimeRange } from "@/lib/vera/meetingHelpers";
 
 export default function MeetingDetailModal({ meeting, employees, currentUserId, onClose, onEdit, onDelete }) {
   const canManage = !meeting.createdBy || meeting.createdBy === currentUserId;
@@ -47,7 +47,7 @@ export default function MeetingDetailModal({ meeting, employees, currentUserId, 
               <div className="meeting-detail-title">{meeting.title}</div>
               <div className="meeting-detail-datetime">
                 {dateLabel}
-                {meeting.time && ` · ${formatMeetingTime12h(meeting.time)}`}
+                {meeting.startTime && ` · ${formatMeetingTimeRange(meeting.startTime, meeting.endTime)}`}
               </div>
             </div>
           </div>

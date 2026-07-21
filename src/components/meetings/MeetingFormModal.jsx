@@ -1,27 +1,49 @@
-// src/components/meetings/MeetingFormModal.jsx
 "use client";
 import { useState, useRef, useEffect } from "react";
 import Icon from "@/lib/Icon";
 import TaskAvatar from "@/components/shared/TaskAvatar";
+import { formatDurationLabel } from "@/lib/vera/meetingHelpers"; // ← pastikan ini ada
 
 export default function MeetingFormModal({ onClose, onSave, defaultDate, initialData, employees, currentUserId }) {
   const isEditing = !!initialData;
   const canEdit = !isEditing || !initialData.createdBy || initialData.createdBy === currentUserId;
 
   const [form, setForm] = useState({
-    title: initialData?.title || "",
-    date: initialData?.date || defaultDate || "",
-    time: initialData?.time || "",
-    location: initialData?.location || "",
-    description: initialData?.description || "",
-    attendeeIds: initialData?.attendeeIds || [],
-  });
+  title: initialData?.title || "",
+  date: initialData?.date || defaultDate || "",
+  startTime: initialData?.startTime || "",   
+  endTime: initialData?.endTime || "",      
+  location: initialData?.location || "",
+  description: initialData?.description || "",
+  attendeeIds: initialData?.attendeeIds || [],
+});
   const [error, setError] = useState("");
   const [inviteQuery, setInviteQuery] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const inviteBoxRef = useRef(null);
 
   const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+
+  function handleStartTimeChange(newStart) {
+  setForm((f) => {
+    if (!newStart) return { ...f, startTime: newStart };
+
+    const toMinutes = (t) => {
+      const [h, m] = t.split(":").map(Number);
+      return h * 60 + m;
+    };
+    const toTime = (mins) => {
+      const wrapped = ((mins % 1440) + 1440) % 1440;
+      return `${String(Math.floor(wrapped / 60)).padStart(2, "0")}:${String(wrapped % 60).padStart(2, "0")}`;
+    };
+
+    const prevDuration = f.startTime && f.endTime ? toMinutes(f.endTime) - toMinutes(f.startTime) : 60;
+    const duration = prevDuration > 0 ? prevDuration : 60;
+    const newEnd = toTime(toMinutes(newStart) + duration);
+
+    return { ...f, startTime: newStart, endTime: newEnd };
+  });
+}
 
   const invitedEmployees = form.attendeeIds
   .filter((id) => id !== currentUserId)
@@ -54,9 +76,13 @@ const suggestions = employees
     setForm((f) => ({ ...f, attendeeIds: f.attendeeIds.filter((a) => a !== id) }));
   };
 
-  const handleSave = () => {
-    if (!form.title || !form.date || !form.time) {
-      setError("Title, Date, and Time are required.");
+ const handleSave = () => {
+    if (!form.title || !form.date || !form.startTime || !form.endTime) {
+      setError("Title, Date, Start Time, and End Time are required.");
+      return;
+    }
+    if (form.endTime <= form.startTime) {
+      setError("End time must be after start time.");
       return;
     }
     onSave(form);
@@ -86,10 +112,33 @@ const suggestions = employees
               <label className="form-label">Date *</label>
               <input type="date" className="input" value={form.date} onChange={update("date")} disabled={!canEdit} />
             </div>
-            <div>
-              <label className="form-label">Time *</label>
-              <input type="time" className="input" value={form.time} onChange={update("time")} disabled={!canEdit} />
+            <div className="form-row two">
+              <div>
+                <label className="form-label">Start Time *</label>
+                <input
+                  type="time"
+                  className="input"
+                  value={form.startTime}
+                  onChange={(e) => handleStartTimeChange(e.target.value)}
+                  disabled={!canEdit}
+                />
+              </div>
+              <div>
+                <label className="form-label">End Time *</label>
+                <input
+                  type="time"
+                  className="input"
+                  value={form.endTime}
+                  onChange={update("endTime")}
+                  disabled={!canEdit}
+                />
+              </div>
             </div>
+            {form.startTime && form.endTime && form.endTime > form.startTime && (
+              <div style={{ fontSize: 11, color: "var(--text3)", marginTop: -8, marginBottom: 8 }}>
+                Duration: {formatDurationLabel(form.startTime, form.endTime)}
+              </div>
+            )}
           </div>
           <div className="form-row">
             <label className="form-label">Location</label>

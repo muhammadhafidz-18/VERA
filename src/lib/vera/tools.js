@@ -42,18 +42,19 @@ export const VERA_TOOLS = [
   },
   {
     name: "create_meeting",
-    description: "Create a new meeting in the Meeting Schedule. Required: title, date, time. If the user hasn't given date/time/who it's with/what it's about, ask for the missing pieces first. Before creating, it's good practice to call get_meetings for the same date to check for a scheduling conflict.",
+    description: "Create a new meeting in the Meeting Schedule. Required: title, date, startTime, endTime. If the user hasn't given date/start-end time/who it's with/what it's about, ask for the missing pieces first. Before creating, it's good practice to call get_meetings for the same date to check for a scheduling conflict.",
     input_schema: {
       type: "object",
       properties: {
         title: { type: "string" },
         date: { type: "string", description: "Format YYYY-MM-DD" },
-        time: { type: "string", description: "24-hour format HH:MM" },
+        startTime: { type: "string", description: "24-hour format HH:MM" },
+        endTime: { type: "string", description: "24-hour format HH:MM" },
         location: { type: "string" },
         description: { type: "string" },
         attendeeNames: { type: "array", items: { type: "string" }, description: "Names of employees to invite" },
       },
-      required: ["title", "date", "time"],
+      required: ["title", "date", "startTime", "endTime"],
     },
   },
   {
@@ -95,6 +96,24 @@ export const VERA_TOOLS = [
         role: { type: "string", enum: ["Superadmin", "User"] },
         phone: { type: "string" },
         address: { type: "string" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "update_meeting",
+    description: "Reschedule or edit an existing meeting (title, date, time, location, description, or attendees). Resolve the meeting's ID via get_meetings first if you only have a description of it, and confirm the intended change with the user before calling it.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The meeting ID, e.g. MTG-01" },
+        title: { type: "string" },
+        date: { type: "string", description: "Format YYYY-MM-DD" },
+        startTime: { type: "string", description: "24-hour format HH:MM" },
+        endTime: { type: "string", description: "24-hour format HH:MM" },
+        location: { type: "string" },
+        description: { type: "string" },
+        attendeeNames: { type: "array", items: { type: "string" }, description: "Names of employees to invite" },
       },
       required: ["id"],
     },

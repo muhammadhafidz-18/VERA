@@ -4,7 +4,7 @@ import { getCurrentEmployee } from "./currentUser";
 import { notifyMeetingParticipants } from "./notifications";
 
 const MEETING_SELECT = `
-  meeting_code, title, date, time, location, description,
+  meeting_code, title, date, start_time, end_time, location, description,
   created_by:employees!meetings_created_by_fkey ( employee_code, name ),
   meeting_attendees ( employees ( employee_code ) )
 `;
@@ -14,7 +14,8 @@ function mapMeetingRow(row) {
     id: row.meeting_code,
     title: row.title,
     date: row.date,
-    time: (row.time || "").slice(0, 5), // "10:00:00" -> "10:00"
+    startTime: (row.start_time || "").slice(0, 5), // "10:00:00" -> "10:00"
+    endTime: (row.end_time || "").slice(0, 5),
     location: row.location || "",
     description: row.description || "",
     createdBy: row.created_by?.employee_code || null,
@@ -42,7 +43,7 @@ export async function getMeetings({ date, search } = {}) {
   const current = await getCurrentEmployee();
   if (!current) return [];
 
-  let query = supabase.from("meetings").select(MEETING_SELECT).order("date").order("time");
+  let query = supabase.from("meetings").select(MEETING_SELECT).order("date").order("start_time");
   if (date) query = query.eq("date", date);
   if (search) query = query.or(`title.ilike.%${search}%,location.ilike.%${search}%`);
 
@@ -60,12 +61,14 @@ export async function getMeetings({ date, search } = {}) {
 export async function createMeeting(input) {
   const supabase = await createClient();
 
-  const { data: sameSlot } = await supabase
+  const { data: sameDay } = await supabase
     .from("meetings")
-    .select("title, time, location")
-    .eq("date", input.date)
-    .eq("time", input.time);
-  const conflicts = sameSlot || [];
+    .select("title, start_time, end_time, location")
+    .eq("date", input.date);
+
+  const conflicts = (sameDay || []).filter(
+    (m) => input.startTime < m.end_time && input.endTime > m.start_time
+  );
 
   let attendeeCodes = input.attendeeIds || [];
   if (!attendeeCodes.length && input.attendeeNames?.length) {
@@ -85,7 +88,8 @@ export async function createMeeting(input) {
       meeting_code: meetingCode,
       title: input.title,
       date: input.date,
-      time: input.time,
+      start_time: input.startTime,
+      end_time: input.endTime,
       location: input.location || null,
       description: input.description || null,
       created_by: current?.uuid || null,
@@ -107,14 +111,20 @@ export async function createMeeting(input) {
   await notifyMeetingParticipants(
     supabase,
     inserted.id,
-    `You've been invited to "${input.title}" on ${input.date} at ${input.time}`,
+    `You've been invited to "${input.title}" on ${input.date} at ${input.startTime}`,
     current?.uuid
   );
+
   return {
     success: true,
     meeting: mapMeetingRow(full),
     schedule_conflict: conflicts.length > 0,
-    conflicting_meetings: conflicts.map((m) => ({ title: m.title, time: (m.time || "").slice(0, 5), location: m.location })),
+    conflicting_meetings: conflicts.map((m) => ({
+      title: m.title,
+      startTime: (m.start_time || "").slice(0, 5),
+      endTime: (m.end_time || "").slice(0, 5),
+      location: m.location,
+    })),
   };
 }
 
@@ -141,7 +151,8 @@ export async function updateMeeting(id, patch) {
   const update = {};
   if (patch.title !== undefined) update.title = patch.title;
   if (patch.date !== undefined) update.date = patch.date;
-  if (patch.time !== undefined) update.time = patch.time;
+  if (patch.startTime !== undefined) update.start_time = patch.startTime;
+  if (patch.endTime !== undefined) update.end_time = patch.endTime;
   if (patch.location !== undefined) update.location = patch.location || null;
   if (patch.description !== undefined) update.description = patch.description || null;
 
@@ -158,14 +169,17 @@ export async function updateMeeting(id, patch) {
     }
   }
 
+  // Fetch the full row BEFORE using it (this was the bug: `full` was
+  // referenced in notifyMeetingParticipants above its declaration).
+  const { data: full } = await supabase.from("meetings").select(MEETING_SELECT).eq("id", meetingRow.id).single();
+
   await notifyMeetingParticipants(
     supabase,
     meetingRow.id,
-    `Meeting "${full.title}" was updated (${full.date} ${(full.time || "").slice(0, 5)})`,
+    `Meeting "${full.title}" was updated (${full.date} ${(full.start_time || "").slice(0, 5)})`,
     current?.uuid
   );
 
-  const { data: full } = await supabase.from("meetings").select(MEETING_SELECT).eq("id", meetingRow.id).single();
   return { success: true, meeting: mapMeetingRow(full) };
 }
 

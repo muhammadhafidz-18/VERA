@@ -78,7 +78,8 @@ create table meetings (
   meeting_code text not null unique,      -- display id, e.g. "MTG-01"
   title text not null,
   date date not null,
-  time time not null,
+  start_time time not null,
+  end_time time not null,
   location text,
   description text,
   created_by uuid references employees(id),
