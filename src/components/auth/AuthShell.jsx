@@ -11,7 +11,7 @@ export default function AuthShell({ children }) {
           <div className="login-brand-content">
             <div>
               <div className="logo-mark-wrap" style={{ marginBottom: 26 }}>
-                <img src="/logo-vera.png" alt="V.E.R.A" className="logo-mark" style={{ width: 44 }} />
+                <img src="/logo-vera.png" alt="VERA" className="logo-mark" style={{ width: 44 }} />
               </div>
               <div className="login-brand-title">V.E.R.A</div>
               <div className="login-brand-desc">

@@ -1,6 +1,6 @@
 // src/components/vera/VeraChat.jsx
 "use client";
-import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
+import { useState, useRef, useEffect } from "react";
 import Icon from "@/lib/Icon";
 import { speak, warmUpVoices } from "@/lib/voice";
 import { clearSession, loadSession } from "@/lib/session";
@@ -18,15 +18,17 @@ import {
   COMMAND_SUGGESTIONS,
 } from "@/lib/vera/chatHelpers";
 
-const VeraChat = forwardRef(function VeraChat({ onLogout, compact = false, hideHeader = false }, ref) {
+export default function VeraChat({ onLogout }) {
   const greeting = getVeraGreeting(loadSession()?.user?.name);
   const [messages, setMessages] = useState(() => loadVeraChatHistory() || [{ role: "assistant", text: greeting }]);
   const [input, setInput] = useState("");
   const [recording, setRecording] = useState(false);
+  const [attachedFile, setAttachedFile] = useState(null); // { name, mediaType, kind, data }
+  const [attachError, setAttachError] = useState("");
+  const fileInputRef = useRef(null);
   const [thinking, setThinking] = useState(false);
   const scrollRef = useRef(null);
   const recognitionRef = useRef(null);
-  const transcriptPartsRef = useRef([]);
 
   useEffect(() => {
     warmUpVoices();
@@ -61,10 +63,6 @@ const VeraChat = forwardRef(function VeraChat({ onLogout, compact = false, hideH
     speak(greeting);
   };
 
-  useImperativeHandle(ref, () => ({
-    resetChat: handleResetChat,
-  }));
-
   const resetChatSilently = () => {
     const fresh = [{ role: "assistant", text: greeting }];
     setMessages(fresh);
@@ -79,17 +77,52 @@ const VeraChat = forwardRef(function VeraChat({ onLogout, compact = false, hideH
     if (onLogout) onLogout();
   };
 
-  const sendText = async (text, viaVoice) => {
-    if (!text || !text.trim() || thinking) return;
+  const MAX_ATTACHMENT_MB = 5;
 
-    // Deterministic shortcut: if V.E.R.A just asked to confirm logout/reset
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+    setAttachError("");
+
+    const isPdf = file.type === "application/pdf";
+    const isImage = file.type.startsWith("image/");
+    if (!isPdf && !isImage) {
+      setAttachError("Cuma bisa attach PDF atau gambar (PNG/JPG).");
+      return;
+    }
+    if (file.size > MAX_ATTACHMENT_MB * 1024 * 1024) {
+      setAttachError(`File maksimal ${MAX_ATTACHMENT_MB}MB.`);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = String(reader.result).split(",")[1] || "";
+      setAttachedFile({ name: file.name, mediaType: file.type, kind: isPdf ? "document" : "image", data: base64 });
+    };
+    reader.onerror = () => setAttachError("Gagal membaca file. Coba lagi.");
+    reader.readAsDataURL(file);
+  };
+
+  const removeAttachment = () => {
+    setAttachedFile(null);
+    setAttachError("");
+  };
+
+  const sendText = async (text, viaVoice) => {
+    const hasAttachment = !!attachedFile;
+    const effectiveText = text?.trim() || (hasAttachment ? "Tolong ringkas isi dokumen ini." : "");
+    if (!effectiveText || thinking) return;
+
+    // Deterministic shortcut: if VERA just asked to confirm logout/reset
     // and this message is a bare "yes", act on it directly — no AI round-trip.
     const lastMsg = messages[messages.length - 1];
-    const isAffirmative = VERA_AFFIRMATIVE_PATTERN.test(text.trim());
-    if (lastMsg && lastMsg.role === "assistant" && isAffirmative) {
+    const isAffirmative = VERA_AFFIRMATIVE_PATTERN.test(effectiveText);
+    if (lastMsg && lastMsg.role === "assistant" && isAffirmative && !hasAttachment) {
       if (VERA_LOGOUT_CONFIRM_QUESTION_PATTERN.test(lastMsg.text)) {
         const confirmMsg = "Baik, kamu akan logout sekarang.";
-        setMessages((m) => [...m, { role: "user", text }, { role: "assistant", text: confirmMsg }]);
+        setMessages((m) => [...m, { role: "user", text: effectiveText }, { role: "assistant", text: confirmMsg }]);
         setInput("");
         if (viaVoice) speak(confirmMsg);
         setTimeout(doLogout, 1600);
@@ -103,22 +136,32 @@ const VeraChat = forwardRef(function VeraChat({ onLogout, compact = false, hideH
       }
     }
 
-    const userMsg = { role: "user", text };
+    const userMsg = { role: "user", text: effectiveText, fileName: hasAttachment ? attachedFile.name : null };
     const nextMessages = [...messages, userMsg];
     setMessages(nextMessages);
     setInput("");
     setThinking(true);
+    const attachmentToSend = attachedFile;
+    setAttachedFile(null);
 
     const history = nextMessages.map((m) => ({
       role: m.role === "assistant" ? "assistant" : "user",
-      content: m.text,
+      // Keep history lightweight — only the current turn sends the actual
+      // file bytes (see `attachment` below); past turns just note a file
+      // was attached, so we're not re-sending the same bytes every turn.
+      content: m.fileName ? `[Melampirkan file: ${m.fileName}] ${m.text}` : m.text,
     }));
 
     try {
       const res = await fetch("/api/vera/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ history }),
+        body: JSON.stringify({
+          history,
+          attachment: attachmentToSend
+            ? { mediaType: attachmentToSend.mediaType, kind: attachmentToSend.kind, data: attachmentToSend.data }
+            : undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Request failed");
@@ -129,7 +172,7 @@ const VeraChat = forwardRef(function VeraChat({ onLogout, compact = false, hideH
         reply = "Maaf, saya sedang kesulitan mengambil data itu. Coba tanyakan lagi sebentar lagi, ya.";
         opType = null;
       }
-      setMessages((m) => [...m, { role: "assistant", text: reply, opType }]);
+      setMessages((m) => [...m, { role: "assistant", text: reply, opType, downloadUrl: data.downloadUrl || null }]);
       if (viaVoice) speak(reply);
 
       if (data.resetRequested) resetChatSilently();
@@ -137,7 +180,7 @@ const VeraChat = forwardRef(function VeraChat({ onLogout, compact = false, hideH
     } catch (err) {
       const fallback = err?.message
         ? `Maaf, terjadi kendala: ${err.message}`
-        : "Maaf, terjadi kendala koneksi ke V.E.R.A. Coba lagi sebentar.";
+        : "Maaf, terjadi kendala koneksi ke VERA. Coba lagi sebentar.";
       setMessages((m) => [...m, { role: "assistant", text: fallback }]);
       if (viaVoice) speak(fallback);
     } finally {
@@ -159,18 +202,10 @@ const VeraChat = forwardRef(function VeraChat({ onLogout, compact = false, hideH
     }
     const recognition = new SpeechRecognitionAPI();
     recognition.lang = "id-ID";
-    recognition.continuous = true;
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
-    recognition.onstart = () => {
-      transcriptPartsRef.current = [];
-      setRecording(true);
-    };
-    recognition.onend = () => {
-      setRecording(false);
-      const fullTranscript = transcriptPartsRef.current.join(" ").trim();
-      if (fullTranscript) sendText(fullTranscript, true);
-    };
+    recognition.onstart = () => setRecording(true);
+    recognition.onend = () => setRecording(false);
     recognition.onerror = (e) => {
       setRecording(false);
       let msg = "Gagal merekam suara. Coba lagi, atau ketik pertanyaan kamu.";
@@ -182,11 +217,8 @@ const VeraChat = forwardRef(function VeraChat({ onLogout, compact = false, hideH
       setMessages((m) => [...m, { role: "assistant", text: msg }]);
     };
     recognition.onresult = (e) => {
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) {
-          transcriptPartsRef.current.push(e.results[i][0].transcript);
-        }
-      }
+      const transcript = e.results?.[0]?.[0]?.transcript;
+      if (transcript) sendText(transcript, true);
     };
     recognitionRef.current = recognition;
     try {
@@ -200,34 +232,22 @@ const VeraChat = forwardRef(function VeraChat({ onLogout, compact = false, hideH
   const isEmpty = messages.length <= 1;
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: compact ? "100%" : "calc(100vh - 105px)",
-        maxWidth: compact ? "none" : 720,
-        width: "100%",
-        margin: compact ? 0 : "0 auto",
-        minHeight: 0,
-      }}
-    >
-      {!hideHeader && (
-        <div className="vera-hero">
-          <div className="vera-hero-icon-badge">
-            <Icon name="message-chatbot" size={17} style={{ color: "#fff" }} />
-          </div>
-          <div className="vera-hero-text">
-            <div className="vera-hero-title">Ask V.E.R.A</div>
-            <div className="vera-hero-sub">Type or talk directly — one door for all your operational needs.</div>
-          </div>
-          <button className="vera-replay-btn" onClick={handleResetChat} title="Hapus riwayat chat dan mulai dari awal">
-            <Icon name="refresh" size={12} /> Reset
-          </button>
-          <span className="vera-live-badge">
-            <span className="vera-live-dot" /> AI Active
-          </span>
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 105px)", maxWidth: 720, width: "100%", margin: "0 auto" }}>
+      <div className="vera-hero">
+        <div className="vera-hero-icon-badge">
+          <Icon name="message-chatbot" size={17} style={{ color: "#fff" }} />
         </div>
-      )}
+        <div className="vera-hero-text">
+          <div className="vera-hero-title">Ask VERA</div>
+          <div className="vera-hero-sub">Type or talk directly — one door for all your operational needs.</div>
+        </div>
+        <button className="vera-replay-btn" onClick={handleResetChat} title="Hapus riwayat chat dan mulai dari awal">
+          <Icon name="refresh" size={12} /> Reset
+        </button>
+        <span className="vera-live-badge">
+          <span className="vera-live-dot" /> AI Active
+        </span>
+      </div>
 
       {isEmpty && (
         <div className="suggestion-panel">
@@ -255,8 +275,18 @@ const VeraChat = forwardRef(function VeraChat({ onLogout, compact = false, hideH
             <div key={i} className={`bubble-row ${m.role}`}>
               {m.role === "assistant" && <div className="avatar-vera">V</div>}
               <div className={`bubble ${m.role}`}>
+                {m.fileName && (
+                  <div className="chat-file-chip">
+                    <Icon name="paperclip" size={12} /> {m.fileName}
+                  </div>
+                )}
                 <div>{m.text}</div>
                 {m.opType && <span className={`op-badge ${m.opType.toLowerCase()}`}>{m.opType}</span>}
+                {m.downloadUrl && (
+                  <a href={m.downloadUrl} download className="chat-download-btn">
+                    <Icon name="file-text" size={14} /> Download Excel
+                  </a>
+                )}
               </div>
             </div>
           ))}
@@ -264,19 +294,46 @@ const VeraChat = forwardRef(function VeraChat({ onLogout, compact = false, hideH
             <div className="bubble-row assistant">
               <div className="avatar-vera">V</div>
               <div className="bubble assistant" style={{ opacity: 0.7 }}>
-                V.E.R.A is thinking...
+                VERA is thinking...
               </div>
             </div>
           )}
         </div>
+        {attachedFile && (
+          <div className="chat-attach-preview">
+            <Icon name={attachedFile.kind === "image" ? "sparkles" : "file-text"} size={13} />
+            <span>{attachedFile.name}</span>
+            <button type="button" onClick={removeAttachment} title="Hapus lampiran">
+              <Icon name="x" size={13} />
+            </button>
+          </div>
+        )}
+        {attachError && <div className="form-error" style={{ margin: "0 4px 8px" }}>{attachError}</div>}
         <div className="chat-input-row">
           <input
-            className="chat-input"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && send()}
-            placeholder="Type a command, e.g. create a meeting tomorrow at 10..."
+            ref={fileInputRef}
+            type="file"
+            accept="application/pdf,image/*"
+            style={{ display: "none" }}
+            onChange={handleFileSelect}
           />
+          <div className="chat-input-wrap">
+            <button
+              type="button"
+              className="chat-attach-icon-btn"
+              onClick={() => fileInputRef.current?.click()}
+              title="Lampirkan PDF atau gambar"
+            >
+              <Icon name="paperclip" size={16} />
+            </button>
+            <input
+              className="chat-input"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && send()}
+              placeholder={attachedFile ? "Tanya sesuatu soal file ini, atau kosongkan buat ringkasan..." : "Type a command, e.g. create a meeting tomorrow at 10..."}
+            />
+          </div>
           <button className={`rec-btn${recording ? " recording" : ""}`} onClick={toggleRecording} title={recording ? "Berhenti merekam" : "Rekam suara"}>
             <Icon name={recording ? "player-stop" : "microphone"} size={18} />
           </button>
@@ -284,6 +341,4 @@ const VeraChat = forwardRef(function VeraChat({ onLogout, compact = false, hideH
       </div>
     </div>
   );
-});
-
-export default VeraChat;
+}

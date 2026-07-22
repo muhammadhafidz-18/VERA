@@ -1,5 +1,5 @@
 // src/lib/vera/executeTool.js
-import { getMeetings, createMeeting, updateMeeting } from "@/lib/supabase/meetings";
+import { getMeetings, createMeeting } from "@/lib/supabase/meetings";
 import { getTasks, createTask, updateTask, changeTaskStatus } from "@/lib/supabase/tasks";
 import {
   getEmployees,
@@ -12,8 +12,9 @@ import {
   getBranches,
   renameBranch,
 } from "@/lib/supabase/directory";
+import { callChatbase } from "@/lib/chatbase";
 
-export async function executeVeraTool(name, input) {
+export async function executeVeraTool(name, input, context = {}) {
   if (name === "get_employees") {
     const results = await getEmployees(input);
     return {
@@ -35,21 +36,15 @@ export async function executeVeraTool(name, input) {
     const results = await getMeetings(input);
     return {
       total_matches: results.length,
-      results: results.slice(0, 25).map((m) => ({ id: m.id, title: m.title, date: m.date, startTime: m.startTime, endTime: m.endTime, location: m.location })),
+      results: results.slice(0, 25).map((m) => ({ id: m.id, title: m.title, date: m.date, time: m.time, location: m.location })),
     };
   }
 
   if (name === "create_meeting") {
-    if (!input.title || !input.date || !input.startTime || !input.endTime) {
-      return { success: false, error: "Missing required fields (title, date, startTime, endTime)." };
+    if (!input.title || !input.date || !input.time) {
+      return { success: false, error: "Missing required fields (title, date, time)." };
     }
     return await createMeeting(input);
-  }
-
-  if (name === "update_meeting") {
-    if (!input.id) return { success: false, error: "Meeting ID is required." };
-    const { id, ...patch } = input;
-    return await updateMeeting(id, patch);
   }
 
   if (name === "create_task") {
@@ -114,6 +109,36 @@ export async function executeVeraTool(name, input) {
   if (name === "add_branch") {
     if (!input.name?.trim()) return { success: false, error: "Branch name is required." };
     return await addBranch(input.name.trim());
+  }
+
+  if (name === "search_product_knowledge") {
+    const { chatbaseConfig } = context;
+    if (!chatbaseConfig?.enabled || !chatbaseConfig?.apiKey || !chatbaseConfig?.chatbotId) {
+      return {
+        success: false,
+        error: "Product knowledge search isn't set up yet. An admin needs to configure Chatbase in Settings first.",
+      };
+    }
+    try {
+      const answer = await callChatbase(input.question, chatbaseConfig.apiKey, chatbaseConfig.chatbotId);
+      return { success: true, answer: answer || "No answer found in the product knowledge base." };
+    } catch (err) {
+      return { success: false, error: "Couldn't reach the product knowledge base right now. Try again shortly." };
+    }
+  }
+
+  if (name === "export_employees") {
+    const results = await getEmployees(input);
+    const params = new URLSearchParams();
+    if (input.division) params.set("division", input.division);
+    if (input.branch) params.set("branch", input.branch);
+    if (input.search) params.set("search", input.search);
+    const qs = params.toString();
+    return {
+      success: true,
+      count: results.length,
+      downloadUrl: `/api/employees/export${qs ? `?${qs}` : ""}`,
+    };
   }
 
   if (name === "logout") {

@@ -47,7 +47,7 @@ export default function Sidebar() {
 
       <div className="sidebar-logo">
         <div className="logo-mark-wrap">
-          <img src="/logo-vera.png" alt="V.E.R.A" className="logo-mark" />
+          <img src="/logo-vera.png" alt="VERA" className="logo-mark" />
         </div>
         {!collapsed && (
           <>
@@ -58,7 +58,7 @@ export default function Sidebar() {
       </div>
 
       <div className="nav-section">
-        <Link href={PAGE_PATHS.command} className={`nav-ask-pill${pathname === PAGE_PATHS.command ? " active" : ""}`} title={collapsed ? "Ask V.E.R.A" : ""}>
+        <Link href={PAGE_PATHS.command} className={`nav-ask-pill${pathname === PAGE_PATHS.command ? " active" : ""}`} title={collapsed ? "Ask VERA" : ""}>
           <div className="sidebar-mic-icon">
             <Icon name="microphone" size={14} />
           </div>
@@ -94,8 +94,6 @@ export default function Sidebar() {
             )}
           </Link>
         ))}
-
-        <div className="sidebar-circuit-panel" />
       </div>
     </div>
   );

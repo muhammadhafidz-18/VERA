@@ -4,7 +4,7 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import Icon from "@/lib/Icon";
 
 const MODULES = [
-  { icon: "message-chatbot", title: "Ask V.E.R.A", desc: "The main conversation hub. Type or record your voice — Claude detects your intent and automatically calls the right module (create a meeting, create a task, look up employee data, etc)." },
+  { icon: "message-chatbot", title: "Ask VERA", desc: "The main conversation hub. Type or record your voice — Claude detects your intent and automatically calls the right module (create a meeting, create a task, look up employee data, etc)." },
   { icon: "address-book", title: "Employee Directory", desc: "Search, add, edit, and delete employee data. Filterable by division and age group, complete with an age distribution pie chart." },
   { icon: "calendar", title: "Meeting Schedule", desc: "View schedules in a monthly calendar layout. Add new meetings via the Add Meeting button or by clicking directly on a date." },
   { icon: "ticket", title: "Tasks", desc: "Submit tasks, complaints, or requests to other divisions. Descriptions are automatically refined by AI before being sent to the target division." },
@@ -16,7 +16,7 @@ export default function HelpPage() {
     <DashboardLayout>
       <div style={{ maxWidth: 760 }}>
         <div className="card-note" style={{ marginBottom: 18 }}>
-          General flow: go to <b>Ask V.E.R.A</b>, then chat or talk directly — the system will pick the right module and execute it for you automatically.
+          General flow: go to <b>Ask VERA</b>, then chat or talk directly — the system will pick the right module and execute it for you automatically.
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {MODULES.map((m, i) => (

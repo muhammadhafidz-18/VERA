@@ -22,9 +22,9 @@ export default function IntroScreen({ onDone }) {
     <div className="intro-shell">
       <div className="intro-glow" />
       <div className="logo-mark-wrap intro-logo">
-        <img src="/logo-vera.png" alt="V.E.R.A" className="logo-mark" style={{ width: 84 }} />
+        <img src="/logo-vera.png" alt="VERA" className="logo-mark" style={{ width: 84 }} />
       </div>
-      <div className="intro-title">Hi, I&rsquo;m V.E.R.A</div>
+      <div className="intro-title">Hi, I&rsquo;m VERA</div>
       <div className="intro-sub">Your Virtual Employee Resource Assistant</div>
 
       {!tapped && (

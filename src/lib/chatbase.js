@@ -3,7 +3,7 @@
 // shared across every user, instead of per-browser localStorage.
 // callChatbase() itself has no browser-only dependencies, so it's used both
 // client-side (for the Settings "Test" button) and server-side (by
-// executeTool.js, for the search_product_knowledge Ask V.E.R.A tool).
+// executeTool.js, for the search_product_knowledge Ask VERA tool).
 export async function getChatbaseConfig() {
   try {
     const res = await fetch("/api/settings/integrations/chatbase");

@@ -40,7 +40,7 @@ export default function VoiceAiTab() {
     setTestError("");
     try {
       if (!config.apiKey || !config.voiceId) throw new Error("Isi API Key dan Voice ID dulu.");
-      await speakWithElevenLabs("Hi, saya V.E.R.A. Ini contoh suara custom yang baru kamu atur.", config.apiKey, config.voiceId);
+      await speakWithElevenLabs("Hi, saya VERA. Ini contoh suara custom yang baru kamu atur.", config.apiKey, config.voiceId);
     } catch (err) {
       setTestError("Gagal memutar suara. Cek kembali API Key dan Voice ID kamu.");
     } finally {

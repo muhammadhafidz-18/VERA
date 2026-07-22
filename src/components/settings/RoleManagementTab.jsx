@@ -13,7 +13,7 @@ export default function RoleManagementTab() {
 
   const roles = [
     { name: "Superadmin", desc: "Full access to all menus including Settings, Employee Directory, and other sensitive data.", count: employees.filter((e) => e.role === "Superadmin").length },
-    { name: "User", desc: "Access to 3 main menus: Ask V.E.R.A, Meeting Schedule, and Tasks.", count: employees.filter((e) => e.role === "User").length },
+    { name: "User", desc: "Access to 3 main menus: Ask VERA, Meeting Schedule, and Tasks.", count: employees.filter((e) => e.role === "User").length },
   ];
 
   return (

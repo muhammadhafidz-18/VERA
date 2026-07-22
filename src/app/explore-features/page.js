@@ -6,8 +6,8 @@ import Icon from "@/lib/Icon";
 const LIVE_FEATURES = [
   {
     icon: "message-chatbot",
-    title: "Ask V.E.R.A",
-    body: "Type or talk, in plain language, and get a real answer — not a search bar. V.E.R.A looks things up, fills in the details, and takes action across the app on your behalf.",
+    title: "Ask VERA",
+    body: "Type or talk, in plain language, and get a real answer — not a search bar. VERA looks things up, fills in the details, and takes action across the app on your behalf.",
   },
   {
     icon: "users",
@@ -34,18 +34,18 @@ const UPCOMING_FEATURES = [
   },
   {
     icon: "activity",
-    title: "Attendance by V.E.R.A",
+    title: "Attendance by VERA",
     body: "Clock in, clock out, or request leave through the same conversation you already use for everything else.",
   },
   {
     icon: "wallet",
     title: "Payroll",
-    body: "Don't need your HR or Finance to explain the calculation amount — just ask V.E.R.A, and get a clear breakdown on the spot.",
+    body: "Don't need your HR or Finance to explain the calculation amount — just ask VERA, and get a clear breakdown on the spot.",
   },
   {
     icon: "list-checks",
-    title: "Bulk Approved by V.E.R.A",
-    body: "Clear a stack of pending approvals in one go — V.E.R.A summarizes what you're approving so you can move fast with confidence.",
+    title: "Bulk Approved by VERA",
+    body: "Clear a stack of pending approvals in one go — VERA summarizes what you're approving so you can move fast with confidence.",
   },
 ];
 
@@ -54,8 +54,8 @@ export default function ExploreFeaturesPage() {
     <div className="features-page">
       <div className="features-header">
         <div className="features-header-brand">
-          <img src="/logo-vera.png" alt="V.E.R.A" />
-          V.E.R.A
+          <img src="/logo-vera.png" alt="VERA" />
+          VERA
         </div>
         <Link href="/login" className="features-back-link">
           <Icon name="arrow-left" size={13} /> Back to Sign in
@@ -64,10 +64,10 @@ export default function ExploreFeaturesPage() {
 
       <div className="features-top">
         <div className="features-top-left">
-          <div className="features-eyebrow-label">WHAT V.E.R.A CAN DO</div>
+          <div className="features-eyebrow-label">WHAT VERA CAN DO</div>
           <h1>One place to start for everything your workday needs.</h1>
           <p>
-            V.E.R.A is your assistant for our directory, schedule, tasks and more in a single conversation — it&apos;s
+            VERA is your assistant for our directory, schedule, tasks and more in a single conversation — it&apos;s
             built to keep growing, taking on more of the busywork so you don&apos;t have to.
           </p>
         </div>
@@ -87,7 +87,7 @@ export default function ExploreFeaturesPage() {
               <Icon name="ticket" size={17} />
             </span>
           </div>
-          <div className="features-status-caption">Already live inside V.E.R.A</div>
+          <div className="features-status-caption">Already live inside VERA</div>
         </div>
       </div>
 
@@ -109,7 +109,7 @@ export default function ExploreFeaturesPage() {
       </div>
 
       <div className="features-list-section upcoming">
-        <div className="features-list-label amber">COMING SOON: FUTURE OF V.E.R.A</div>
+        <div className="features-list-label amber">COMING SOON: FUTURE OF VERA</div>
         <div className="feature-row-list">
           {UPCOMING_FEATURES.map((f) => (
             <div className="feature-row" key={f.title}>
@@ -130,7 +130,7 @@ export default function ExploreFeaturesPage() {
         <h2>Ready to get started?</h2>
         <p>Sign in with your email and password — your menu adjusts automatically to your role.</p>
         <Link href="/login" className="features-cta-btn">
-          SIGN IN TO V.E.R.A <Icon name="arrow-left" size={13} style={{ transform: "rotate(180deg)" }} />
+          SIGN IN TO VERA <Icon name="arrow-left" size={13} style={{ transform: "rotate(180deg)" }} />
         </Link>
       </div>
     </div>

@@ -47,7 +47,12 @@ button{font-family:inherit}
 
 .sidebar{
   width:220px;height:100vh;
-  background:linear-gradient(165deg,var(--sidebar-start) 0%,var(--sidebar-mid) 55%,var(--sidebar-end) 130%);
+  background-image:
+    linear-gradient(180deg,rgba(18,63,112,.45) 0%,rgba(18,63,112,.8) 22%,rgba(29,95,160,.8) 78%,rgba(34,172,199,.4) 100%),
+    url('/sidebar-bg.jpg');
+  background-size:cover;
+  background-position:center;
+  background-repeat:no-repeat;
   flex-shrink:0;overflow-y:auto;overflow-x:hidden;z-index:100;position:relative;box-shadow:2px 0 12px rgba(18,63,112,.22);display:flex;flex-direction:column;padding:0 10px 20px;
   transition:width .2s ease;
 }
@@ -121,19 +126,6 @@ button{font-family:inherit}
 .sidebar-mic-text{min-width:0;text-align:left}
 .sidebar-mic-text b{color:#fff;display:block;font-size:10.5px;margin-bottom:1px}
 .sidebar-mic-text span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:rgba(255,255,255,.75);font-size:10px}
-
-.sidebar-circuit-panel{
-  margin-top:auto;flex-shrink:0;pointer-events:none;
-  min-height:130px;
-  margin-left:-10px;margin-right:-10px;margin-bottom:-20px;
-  width:calc(100% + 20px);
-  background-image:url(/sidebar-circuit.png);
-  background-size:cover;
-  background-position:center bottom;
-  background-repeat:no-repeat;
-  mask-image:linear-gradient(to bottom, transparent 0%, black 30%);
-  -webkit-mask-image:linear-gradient(to bottom, transparent 0%, black 30%);
-}
 
 .main{flex:1;display:flex;flex-direction:column;width:calc(100vw - 220px);overflow-y:auto;overflow-x:hidden}
 .topbar{padding:16px 28px;border-bottom:1px solid var(--border);background:var(--bg2);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50}
@@ -217,12 +209,37 @@ td.mono{font-family:'DM Mono',monospace;font-size:12px}
 .op-badge{display:inline-block;margin-top:5px;padding:2px 8px;border-radius:5px;font-size:9.5px;font-weight:700;letter-spacing:.5px}
 .op-badge.insert{background:var(--green-s);color:var(--green)}
 .op-badge.update{background:var(--blue-s);color:var(--blue)}
+.chat-download-btn{
+  display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:8px 14px;
+  background:var(--accent);color:#fff;font-size:12.5px;font-weight:600;border-radius:8px;
+  text-decoration:none;transition:background .15s;
+}
+.chat-download-btn:hover{background:var(--accent2)}
+.chat-file-chip{
+  display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;
+  color:var(--text2);background:var(--bg3);border:1px solid var(--border);
+  padding:4px 9px;border-radius:6px;margin-bottom:6px;
+}
+.chat-attach-preview{
+  display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text2);
+  background:var(--bg3);border:1px solid var(--border);border-radius:8px;
+  padding:8px 12px;margin:0 4px 8px;
+}
+.chat-attach-preview span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-attach-preview button{background:none;border:none;color:var(--text3);cursor:pointer;display:flex;padding:2px}
+.chat-attach-preview button:hover{color:var(--red)}
 .bubble.user{align-self:flex-end;background:var(--accent);color:#fff}
 .bubble.assistant{align-self:flex-start;background:var(--bg3);color:var(--text)}
 .bubble.system{align-self:flex-start;background:var(--yellow-s);color:var(--yellow);font-size:12.5px}
-.chat-input-row{display:flex;gap:8px;padding-top:16px;border-top:1px solid var(--border)}
-.chat-input{flex:1;padding:10px 14px;border-radius:8px;border:1px solid var(--border2);font-size:13.5px;font-family:inherit}
+.chat-input-row{display:flex;gap:8px;padding-top:16px;border-top:1px solid var(--border);align-items:center}
+.chat-input-wrap{position:relative;flex:1;display:flex}
+.chat-input{flex:1;padding:10px 14px 10px 38px;border-radius:8px;border:1px solid var(--border2);font-size:13.5px;font-family:inherit}
 .chat-input:focus{outline:none;border-color:var(--accent)}
+.chat-attach-icon-btn{
+  position:absolute;left:8px;top:50%;transform:translateY(-50%);z-index:1;
+  background:none;border:none;color:var(--text3);cursor:pointer;padding:4px;display:flex;line-height:0;
+}
+.chat-attach-icon-btn:hover{color:var(--accent)}
 
 .card-note{background:var(--bg2);border:1px solid var(--border);clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);padding:14px 16px;font-size:12px;color:var(--text2);line-height:1.7}
 
@@ -592,7 +609,7 @@ select.input{cursor:pointer}
 .vera-replay-btn{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);color:#fff;padding:6px 12px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0;position:relative;z-index:1;transition:background .15s ease}
 .vera-replay-btn:hover{background:rgba(255,255,255,.24)}
 @keyframes vera-pulse{0%{box-shadow:0 0 0 0 rgba(74,222,128,.6)}70%{box-shadow:0 0 0 6px rgba(74,222,128,0)}100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}}
-.vera-hero-compact{padding:8px 12px;margin-bottom:8px;justify-content:flex-end}
+
 .vera-chat-card{flex:1;display:flex;flex-direction:column;background:var(--bg2);border:1px solid var(--border);clip-path:polygon(16px 0,100% 0,100% calc(100% - 16px),calc(100% - 16px) 100%,0 100%,0 16px);filter:drop-shadow(0 1px 2px rgba(16,24,40,.08)) drop-shadow(0 10px 22px rgba(29,95,160,.18)) drop-shadow(0 24px 44px rgba(29,95,160,.12));padding:18px 18px 14px;overflow:hidden;min-height:0;transition:filter .2s ease}
 
 /* ---------- Command suggestion cards (glass, matches reference) ---------- */

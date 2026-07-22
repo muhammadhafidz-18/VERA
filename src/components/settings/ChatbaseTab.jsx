@@ -64,7 +64,7 @@ export default function ChatbaseTab() {
       <div className="form-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--bg3)", padding: "12px 14px", borderRadius: 10 }}>
         <div>
           <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>Use Product Knowledge Base (Chatbase)</div>
-          <div style={{ fontSize: 11.5, color: "var(--text3)" }}>Kalau nonaktif, Ask V.E.R.A cuma jawab dari pengetahuan umum, tidak bisa akses knowledge base produk kamu.</div>
+          <div style={{ fontSize: 11.5, color: "var(--text3)" }}>Kalau nonaktif, Ask VERA cuma jawab dari pengetahuan umum, tidak bisa akses knowledge base produk kamu.</div>
         </div>
         <label className="switch">
           <input type="checkbox" checked={config.enabled} onChange={(e) => setConfig((c) => ({ ...c, enabled: e.target.checked }))} />

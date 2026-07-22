@@ -42,19 +42,18 @@ export const VERA_TOOLS = [
   },
   {
     name: "create_meeting",
-    description: "Create a new meeting in the Meeting Schedule. Required: title, date, startTime, endTime. If the user hasn't given date/start-end time/who it's with/what it's about, ask for the missing pieces first. Before creating, it's good practice to call get_meetings for the same date to check for a scheduling conflict.",
+    description: "Create a new meeting in the Meeting Schedule. Required: title, date, time. If the user hasn't given date/time/who it's with/what it's about, ask for the missing pieces first. Before creating, it's good practice to call get_meetings for the same date to check for a scheduling conflict.",
     input_schema: {
       type: "object",
       properties: {
         title: { type: "string" },
         date: { type: "string", description: "Format YYYY-MM-DD" },
-        startTime: { type: "string", description: "24-hour format HH:MM" },
-        endTime: { type: "string", description: "24-hour format HH:MM" },
+        time: { type: "string", description: "24-hour format HH:MM" },
         location: { type: "string" },
         description: { type: "string" },
         attendeeNames: { type: "array", items: { type: "string" }, description: "Names of employees to invite" },
       },
-      required: ["title", "date", "startTime", "endTime"],
+      required: ["title", "date", "time"],
     },
   },
   {
@@ -96,24 +95,6 @@ export const VERA_TOOLS = [
         role: { type: "string", enum: ["Superadmin", "User"] },
         phone: { type: "string" },
         address: { type: "string" },
-      },
-      required: ["id"],
-    },
-  },
-  {
-    name: "update_meeting",
-    description: "Reschedule or edit an existing meeting (title, date, time, location, description, or attendees). Resolve the meeting's ID via get_meetings first if you only have a description of it, and confirm the intended change with the user before calling it.",
-    input_schema: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "The meeting ID, e.g. MTG-01" },
-        title: { type: "string" },
-        date: { type: "string", description: "Format YYYY-MM-DD" },
-        startTime: { type: "string", description: "24-hour format HH:MM" },
-        endTime: { type: "string", description: "24-hour format HH:MM" },
-        location: { type: "string" },
-        description: { type: "string" },
-        attendeeNames: { type: "array", items: { type: "string" }, description: "Names of employees to add as attendees. This ADDS to the existing attendee list — it does not remove anyone already invited." },
       },
       required: ["id"],
     },
@@ -169,12 +150,34 @@ export const VERA_TOOLS = [
     },
   },
   {
+    name: "search_product_knowledge",
+    description: "Search the company's product knowledge base (Chatbase) to answer questions about Mekari products — e.g. Talenta features, how something works, pricing, or usage instructions. Use this for any product/how-to question that isn't about internal VERA data (employees, meetings, tasks, divisions, branches).",
+    input_schema: {
+      type: "object",
+      properties: { question: { type: "string", description: "The user's question, verbatim or lightly cleaned up" } },
+      required: ["question"],
+    },
+  },
+  {
+    name: "export_employees",
+    description: "Generate a downloadable Excel (.xlsx) export of the employee directory, optionally filtered by division, branch, or a search term. Use this whenever the user asks to export, download, or get an Excel/spreadsheet file of employee data.",
+    input_schema: {
+      type: "object",
+      properties: {
+        division: { type: "string", description: "Filter to only this division, if the user mentioned one" },
+        branch: { type: "string", description: "Filter to only this branch, if the user mentioned one" },
+        search: { type: "string", description: "Free-text search filter, if the user mentioned one" },
+      },
+    },
+  },
+  {
     name: "logout",
     description: "Sign the current user out of the app, ending their session. This is destructive/disruptive — only call it after the user has clearly and explicitly confirmed they want to log out in THIS conversation.",
     input_schema: { type: "object", properties: {} },
   },
   {
     name: "reset_conversation",
-    description: "Clear the current chat history in Ask V.E.R.A and start a fresh conversation. This cannot be undone — only call it after the user has clearly confirmed they want to reset/clear the conversation.",
+    description: "Clear the current chat history in Ask VERA and start a fresh conversation. This cannot be undone — only call it after the user has clearly confirmed they want to reset/clear the conversation.",
     input_schema: { type: "object", properties: {} },
-  },];
+  },
+];
