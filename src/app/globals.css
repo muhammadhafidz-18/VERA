@@ -232,8 +232,8 @@ td.mono{font-family:'DM Mono',monospace;font-size:12px}
 .bubble.assistant{align-self:flex-start;background:var(--bg3);color:var(--text)}
 .bubble.system{align-self:flex-start;background:var(--yellow-s);color:var(--yellow);font-size:12.5px}
 .chat-input-row{display:flex;gap:8px;padding-top:16px;border-top:1px solid var(--border);align-items:center}
-.chat-input-wrap{position:relative;flex:1;display:flex}
-.chat-input{flex:1;padding:10px 14px 10px 38px;border-radius:8px;border:1px solid var(--border2);font-size:13.5px;font-family:inherit}
+.chat-input-wrap{position:relative;flex:1;display:flex;min-width:0}
+.chat-input{flex:1;min-width:0;width:100%;box-sizing:border-box;padding:10px 14px 10px 38px;border-radius:8px;border:1px solid var(--border2);font-size:13.5px;font-family:inherit}
 .chat-input:focus{outline:none;border-color:var(--accent)}
 .chat-attach-icon-btn{
   position:absolute;left:8px;top:50%;transform:translateY(-50%);z-index:1;
