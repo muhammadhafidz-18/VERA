@@ -9,7 +9,7 @@ import { getIntegrationConfig } from "@/lib/supabase/integrations";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-4-6";
-const MAX_TURNS = 5;
+const MAX_TURNS = 8;
 const MAX_IMPORT_ROWS = 500;
 
 const VERA_TOOL_OPERATION_TYPE = {
@@ -22,6 +22,7 @@ const VERA_TOOL_OPERATION_TYPE = {
   update_task: "UPDATE",
   update_division: "UPDATE",
   update_branch: "UPDATE",
+  update_meeting: "UPDATE",
   get_employees: "READ",
   get_meetings: "READ",
   get_tasks: "READ",
@@ -33,6 +34,10 @@ const VERA_TOOL_OPERATION_TYPE = {
   reset_conversation: "SESSION",
 };
 
+// Safety-net patterns, ported from the HTML prototype. Kept here even though
+// a real server-side API key + `tool_choice` should make dodges much rarer
+// than they were in the sandboxed preview — this is defense in depth, not a
+// primary reliability mechanism anymore.
 const VERA_PLACEHOLDER_PATTERN =
   /(\blet me (?!know\b)\w+|checking now|one moment please|hold on a moment|i need to \w+|i'll \w+ .*(now|for you)|i will \w+ .*(now|for you)|i apologize for that|sorry (about|for) that|sebentar(?: ya)?[.,]|tunggu sebentar|mohon tunggu|saya (akan|perlu|harus|mau|butuh) (mengambil|akses|cek|periksa|memeriksa|mendapatkan)\b|perlu (meng)?(ambil|akses|cek|periksa|lihat|dapatkan) (data|direktori|informasi)|tool(nya| saya| ini)? (belum|tidak|masih belum) (terhubung|merespons|tersedia|jalan|connect)|belum terhubung|tidak terhubung ke|hubungi admin|coba (tanyakan|tanya) lagi|masalah berlanjut|sepertinya (ada )?(masalah|kendala|error))/i;
 const VERA_META_PATTERN =
@@ -157,7 +162,6 @@ async function handleSpreadsheetImport(attachment, lastUserText) {
     return summarizeImportResultWithClaude(result, "Employee");
   }
 
-  // divisions / branches
   const fieldByCol = headerRow.map((h) => MASTER_LIST_HEADER_MAP[h] || null);
   const label = target === "branches" ? "Branch" : "Division";
   if (!fieldByCol.includes("name")) {
@@ -214,6 +218,8 @@ export async function POST(request) {
 
     const lastUserMsg = [...history].reverse().find((m) => m.role === "user");
 
+    // Spreadsheet attachments are handled entirely server-side — bypass
+    // the Claude tool-calling loop below completely for this turn.
     if (attachment?.kind === "spreadsheet" && attachment?.data) {
       const text = await handleSpreadsheetImport(attachment, lastUserMsg?.content);
       return NextResponse.json({ text, logoutRequested: false, resetRequested: false, dbOperationType: null });
@@ -223,7 +229,25 @@ export async function POST(request) {
     const branches = await getBranches();
     const chatbaseConfig = await getIntegrationConfig("chatbase");
     const productKnowledgeEnabled = !!(chatbaseConfig?.enabled && chatbaseConfig?.apiKey && chatbaseConfig?.chatbotId);
-    const systemPrompt = buildVeraSystemPrompt(divisions, branches, productKnowledgeEnabled);
+
+    const now = new Date();
+    const jakartaFmt = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Jakarta",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }); // en-CA gives YYYY-MM-DD directly
+    const iso = jakartaFmt.format(now); // e.g. "2026-07-21"
+    const dayName = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jakarta", weekday: "long" }).format(now);
+    const humanId = new Intl.DateTimeFormat("id-ID", {
+      timeZone: "Asia/Jakarta",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(now);
+    const today = { iso, dayName, humanId };
+
+    const systemPrompt = buildVeraSystemPrompt(divisions, branches, productKnowledgeEnabled, today);
 
     const lastUserWasConfirmation =
       lastUserMsg &&
@@ -237,6 +261,10 @@ export async function POST(request) {
 
     let messages = history;
 
+    // If a file was attached to this turn (PDF/image — spreadsheets already
+    // returned above), splice it into the last user message as a
+    // document/image content block. Claude reads it directly — no OCR/
+    // extraction step needed for PDFs or images.
     if (attachment?.data && messages.length) {
       const lastIdx = messages.length - 1;
       const last = messages[lastIdx];
@@ -251,6 +279,7 @@ export async function POST(request) {
         ];
       }
     }
+
     let forceToolChoice = false;
     let logoutRequested = false;
     let resetRequested = false;
@@ -267,12 +296,29 @@ export async function POST(request) {
 
       if (toolUses.length === 0) {
         const text = content.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+
+        // A real create/update already succeeded earlier in this turn-chain —
+        // trust this wrap-up text as the final answer instead of running it
+        // through the dodge/stall heuristics below. Those heuristics exist to
+        // catch Claude avoiding work before anything real has happened; once
+        // the actual database change is done, second-guessing the follow-up
+        // text just causes false failures on genuinely successful requests.
+        if (dbOperationType) {
+          return NextResponse.json({
+            text: text || "Selesai.",
+            logoutRequested,
+            resetRequested,
+            dbOperationType,
+            downloadUrl,
+          });
+        }
+
         const looksLikePlaceholder = VERA_PLACEHOLDER_PATTERN.test(text);
         const looksLikeRawData = VERA_RAW_DATA_PATTERN.test(text);
         const looksLikeMeta = VERA_META_PATTERN.test(text);
         const looksLikeFalseSuccess = VERA_SUCCESS_CLAIM_PATTERN.test(text);
         const looksLikeDodgedConfirmation = lastUserWasConfirmation && !logoutRequested && !resetRequested;
-        const looksLikeUnverifiedSubmission = lastUserLooksLikeDataSubmission && !dbOperationType;
+        const looksLikeUnverifiedSubmission = lastUserLooksLikeDataSubmission;
         const isBad =
           looksLikePlaceholder ||
           looksLikeRawData ||
@@ -285,7 +331,7 @@ export async function POST(request) {
           const nudge = looksLikeUnverifiedSubmission
             ? "The user just gave you structured details (name/email/division/branch) to create a record, but no create tool has actually succeeded yet. Call the appropriate create tool right now with those exact details."
             : looksLikeDodgedConfirmation
-            ? "The user just confirmed an action you asked about. Don't reply with a generic acknowledgment — call the corresponding tool right now (e.g. reset_conversation or logout) to actually carry it out."
+            ? "The user just confirmed the action you asked about in your previous message. Don't reply with a generic acknowledgment — call the specific tool that matches what THAT confirmation was about (for example, if you asked to confirm a meeting update, call update_meeting; if it was about logging out, call logout) right now to actually carry it out."
             : looksLikeFalseSuccess
             ? "You just claimed something was added/created/scheduled, but you did NOT actually call the tool to do it. Call the correct tool for real right now."
             : looksLikeRawData
@@ -317,8 +363,11 @@ export async function POST(request) {
       }
 
       const toolResults = [];
+      let meetingWriteResult = null;
+      let meetingWriteVerb = null;
       for (const tu of toolUses) {
         const result = await executeVeraTool(tu.name, tu.input || {}, { chatbaseConfig });
+        console.log(`[VERA DEBUG] ${tu.name}`, JSON.stringify(tu.input), "=>", JSON.stringify(result));
         if (tu.name === "logout" && result.success) logoutRequested = true;
         if (tu.name === "reset_conversation" && result.success) resetRequested = true;
         if (result.success) {
@@ -326,17 +375,43 @@ export async function POST(request) {
           if (opType === "INSERT" || opType === "UPDATE") dbOperationType = opType;
           if (result.downloadUrl) downloadUrl = result.downloadUrl;
         }
+        if ((tu.name === "create_meeting" || tu.name === "update_meeting") && result.success && result.meeting) {
+          meetingWriteResult = result;
+          meetingWriteVerb = tu.name === "create_meeting" ? "dibuat" : "diupdate";
+        }
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(result) });
+      }
+
+      // Deterministic short-circuit: once a meeting create/update tool has
+      // actually succeeded, reply immediately using the tool's own data
+      // instead of asking the model for one more turn. This sidesteps
+      // models that keep re-verifying with get_meetings out of caution and
+      // burn through the turn budget before ever replying. Note: this does
+      // NOT fire when update_meeting returns needs_confirmation (success is
+      // false in that case), so the confirmation flow falls through to the
+      // normal loop below and Claude explains the conflict + asks the user.
+      if (meetingWriteResult) {
+        const m = meetingWriteResult.meeting;
+        const attendeeCount = m.attendeeIds?.length || 0;
+        const attendeeText = attendeeCount > 0 ? ` Total peserta sekarang: ${attendeeCount} orang.` : "";
+        const conflictText = meetingWriteResult.schedule_conflict
+          ? " Catatan: ada bentrok jadwal dengan meeting lain di waktu yang sama."
+          : "";
+        const text = `Meeting "${m.title}" berhasil ${meetingWriteVerb} untuk ${m.date}, pukul ${m.startTime}–${m.endTime}${m.location ? ` di ${m.location}` : ""}.${attendeeText}${conflictText}`;
+        return NextResponse.json({ text, logoutRequested, resetRequested, dbOperationType });
       }
 
       messages = [...messages, { role: "assistant", content }, { role: "user", content: toolResults }];
     }
 
     return NextResponse.json({
-      text: "Maaf, permintaan ini butuh beberapa langkah dan belum selesai. Coba pertanyaan yang lebih spesifik.",
+      text: dbOperationType
+        ? "Perubahannya sudah tersimpan, tapi saya kehabisan giliran untuk merangkum hasilnya. Coba cek langsung di halaman terkait, atau tanya lagi untuk konfirmasi."
+        : "Maaf, permintaan ini butuh beberapa langkah dan belum selesai. Coba pertanyaan yang lebih spesifik.",
       logoutRequested,
       resetRequested,
       dbOperationType,
+      downloadUrl,
     });
   } catch (err) {
     console.error("[VERA] chat route error:", err);

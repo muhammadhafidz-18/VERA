@@ -2,6 +2,7 @@
 import { createClient } from "./server";
 import { getCurrentEmployee } from "./currentUser";
 import { notifyTaskParticipants } from "./notifications";
+import { createAdminClient } from "./admin";
 
 const TASK_FIELDS = `
   id, task_code, title, description, status, priority, due_date,
@@ -388,4 +389,47 @@ export async function changeTaskStatus(taskCode, newStatus) {
   const { data: full } = await supabase.from("tasks").select(TASK_FIELDS).eq("id", taskRow.id).single();
   const [chats, auditLog] = await Promise.all([fetchChats(supabase, taskRow.id), fetchAuditLog(supabase, taskRow.id)]);
   return { success: true, task: mapTaskRow(full, { chats, auditLog }) };
+}
+
+export async function notifyOverdueTasks() {
+  const admin = createAdminClient();
+  const nowIso = new Date().toISOString();
+  const escalationThreshold = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data: overdueTasks, error } = await admin
+    .from("tasks")
+    .select("id, task_code, title, due_date, status, created_by, assigned_to, overdue_notified_at")
+    .lt("due_date", nowIso)
+    .not("status", "in", "(done,cancelled)")
+    .or(`overdue_notified_at.is.null,overdue_notified_at.lt.${escalationThreshold}`);
+
+  if (error) {
+    console.error("notifyOverdueTasks:", error.message);
+    return { success: false, error: error.message, notified: 0 };
+  }
+  if (!overdueTasks || overdueTasks.length === 0) {
+    return { success: true, notified: 0 };
+  }
+
+  let notifiedCount = 0;
+  for (const task of overdueTasks) {
+    const daysLate = Math.max(1, Math.floor((Date.now() - new Date(task.due_date).getTime()) / (24 * 60 * 60 * 1000)));
+    const message = `Task "${task.title}" (${task.task_code}) is overdue by ${daysLate} day${daysLate === 1 ? "" : "s"}.`;
+
+    const recipients = [...new Set([task.created_by, task.assigned_to].filter(Boolean))];
+    if (recipients.length) {
+      const { error: insertError } = await admin
+        .from("notifications")
+        .insert(recipients.map((recipient_id) => ({ task_id: task.id, recipient_id, message })));
+      if (insertError) {
+        console.error(`notifyOverdueTasks (${task.task_code}):`, insertError.message);
+        continue;
+      }
+    }
+
+    await admin.from("tasks").update({ overdue_notified_at: nowIso }).eq("id", task.id);
+    notifiedCount++;
+  }
+
+  return { success: true, notified: notifiedCount };
 }

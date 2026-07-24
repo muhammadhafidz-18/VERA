@@ -60,7 +60,7 @@ function MeetingsPageInner() {
   const upcoming = meetings.filter((m) => m && m.date >= todayIso).length;
   const meetingsForDay = dayListDate ? meetings.filter((m) => m.date === dayListDate) : [];
 
-  const handleSave = async (form) => {
+    const handleSave = async (form) => {
     if (editingMeeting) {
       const res = await fetch(`/api/meetings/${encodeURIComponent(editingMeeting.id)}`, {
         method: "PUT",
@@ -73,6 +73,10 @@ function MeetingsPageInner() {
         return;
       }
       setMeetings((list) => list.map((m) => (m.id === editingMeeting.id ? data.meeting : m)));
+
+      if (data.schedule_conflict && data.conflicting_meetings?.length) {
+        setConflictInfo({ meeting: data.meeting, conflicts: data.conflicting_meetings });
+      }
     } else {
       const res = await fetch("/api/meetings", {
         method: "POST",

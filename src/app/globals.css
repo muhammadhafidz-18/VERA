@@ -231,9 +231,20 @@ td.mono{font-family:'DM Mono',monospace;font-size:12px}
 .bubble.user{align-self:flex-end;background:var(--accent);color:#fff}
 .bubble.assistant{align-self:flex-start;background:var(--bg3);color:var(--text)}
 .bubble.system{align-self:flex-start;background:var(--yellow-s);color:var(--yellow);font-size:12.5px}
-.chat-input-row{display:flex;gap:8px;padding-top:16px;border-top:1px solid var(--border);align-items:center}
-.chat-input-wrap{position:relative;flex:1;display:flex;min-width:0}
-.chat-input{flex:1;min-width:0;width:100%;box-sizing:border-box;padding:10px 14px 10px 38px;border-radius:8px;border:1px solid var(--border2);font-size:13.5px;font-family:inherit}
+.chat-input-row{display:flex;gap:8px;padding-top:16px;border-top:1px solid var(--border)}
+.chat-input-wrap{flex:1;display:flex;align-items:center;gap:6px;padding:0 6px 0 10px;border-radius:8px;border:1px solid var(--border2);background:#fff;min-width:0}
+.chat-input-wrap:focus-within{border-color:var(--accent)}
+.chat-input{flex:1;min-width:0;padding:10px 6px;border:none;background:transparent;font-size:13.5px;font-family:inherit}
+.chat-input:focus{outline:none}
+.chat-attach-icon-btn{flex-shrink:0;width:28px;height:28px;border-radius:6px;border:none;background:transparent;color:var(--text2);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .15s,color .15s}
+.chat-attach-icon-btn:hover{background:var(--bg3);color:var(--accent)}
+.chat-attach-preview{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);background:var(--bg3);border-radius:8px;padding:6px 10px;margin:0 4px 8px;width:fit-content;max-width:100%}
+.chat-attach-preview span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
+.chat-attach-preview button{border:none;background:transparent;color:var(--text2);cursor:pointer;display:flex;align-items:center;flex-shrink:0}
+.chat-attach-preview button:hover{color:var(--red)}
+.chat-file-chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;background:rgba(255,255,255,.2);border-radius:6px;padding:3px 8px;margin-bottom:6px;width:fit-content}
+.chat-download-btn{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--accent);margin-top:8px;text-decoration:none}
+.chat-download-btn:hover{text-decoration:underline}
 .chat-input:focus{outline:none;border-color:var(--accent)}
 .chat-attach-icon-btn{
   position:absolute;left:8px;top:50%;transform:translateY(-50%);z-index:1;

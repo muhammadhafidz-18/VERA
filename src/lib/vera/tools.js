@@ -48,7 +48,8 @@ export const VERA_TOOLS = [
       properties: {
         title: { type: "string" },
         date: { type: "string", description: "Format YYYY-MM-DD" },
-        time: { type: "string", description: "24-hour format HH:MM" },
+        startTime: { type: "string", description: "24-hour format HH:MM" },
+        endTime: { type: "string", description: "24-hour format HH:MM" },
         location: { type: "string" },
         description: { type: "string" },
         attendeeNames: { type: "array", items: { type: "string" }, description: "Names of employees to invite" },
@@ -99,6 +100,29 @@ export const VERA_TOOLS = [
       required: ["id"],
     },
   },
+
+  {
+    name: "update_meeting",
+    description: "Update fields on an existing meeting (title, date, start/end time, location, description). Requires the meeting ID (use get_meetings first if you only have a description of it). Only include the fields that should change. If the new time conflicts with another meeting, the tool will refuse and return needs_confirmation instead of saving — explain the conflict to the user (which meeting, what time) and only call this again with confirmed: true if the user explicitly says to proceed anyway. Never assume yes.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Meeting ID to update, e.g. MTG-05" },
+        title: { type: "string" },
+        date: { type: "string", description: "Format YYYY-MM-DD" },
+        startTime: { type: "string", description: "24-hour format HH:MM" },
+        endTime: { type: "string", description: "24-hour format HH:MM" },
+        location: { type: "string" },
+        description: { type: "string" },
+        confirmed: {
+          type: "boolean",
+          description: "Only set true after the user has explicitly confirmed they want to proceed despite a schedule conflict.",
+        },
+      },
+      required: ["id"],
+    },
+  },
+
   {
     name: "get_tasks",
     description: "List tasks. Use this to answer questions about task status, who a task is assigned to, or how many tasks exist. Optionally resolve a person's tasks by first calling get_employees to find their ID, then filter results yourself by assignedTo/createdBy in your reply.",
@@ -121,6 +145,7 @@ export const VERA_TOOLS = [
       required: ["id"],
     },
   },
+
   {
     name: "get_divisions",
     description: "List all divisions in the company's Settings. Use this to check whether a division already exists before adding one, or to answer questions about what divisions exist.",

@@ -68,8 +68,12 @@ export default function Topbar({ onLogout, user }) {
   return (
     <div className="topbar">
       <div>
-        <div className="page-title">{title}</div>
-        <div className="page-sub">{sub}</div>
+        {pageKey !== "command" && (
+          <>
+            <div className="page-title">{title}</div>
+            <div className="page-sub">{sub}</div>
+          </>
+        )}
       </div>
       <div className="user-badge">
         <button
