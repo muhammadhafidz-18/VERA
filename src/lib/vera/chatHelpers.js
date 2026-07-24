@@ -3,8 +3,8 @@
 export const VERA_CHAT_HISTORY_KEY = "vera_chat_history_v2";
 
 export function getVeraGreeting(userName) {
-  const firstName = (userName || "").trim().split(/\s+/)[0] || "there";
-  return `Hi ${firstName}! How can I help you today?`;
+  const name = (userName || "").trim() || "there";
+  return `Hi ${name}! How can I help you today?`;
 }
 
 export function loadVeraChatHistory() {

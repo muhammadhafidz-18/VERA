@@ -79,6 +79,8 @@ export default function VeraChat({ onLogout }) {
 
   const MAX_ATTACHMENT_MB = 5;
 
+  const SPREADSHEET_EXTENSIONS = [".xlsx", ".xls", ".csv"];
+
   const handleFileSelect = (e) => {
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-selecting the same file later
@@ -87,8 +89,10 @@ export default function VeraChat({ onLogout }) {
 
     const isPdf = file.type === "application/pdf";
     const isImage = file.type.startsWith("image/");
-    if (!isPdf && !isImage) {
-      setAttachError("Cuma bisa attach PDF atau gambar (PNG/JPG).");
+    const isSpreadsheet = SPREADSHEET_EXTENSIONS.some((ext) => file.name.toLowerCase().endsWith(ext));
+
+    if (!isPdf && !isImage && !isSpreadsheet) {
+      setAttachError("Cuma bisa attach PDF, gambar (PNG/JPG), atau Excel/CSV (.xlsx, .xls, .csv).");
       return;
     }
     if (file.size > MAX_ATTACHMENT_MB * 1024 * 1024) {
@@ -96,10 +100,12 @@ export default function VeraChat({ onLogout }) {
       return;
     }
 
+    const kind = isPdf ? "document" : isImage ? "image" : "spreadsheet";
+
     const reader = new FileReader();
     reader.onload = () => {
       const base64 = String(reader.result).split(",")[1] || "";
-      setAttachedFile({ name: file.name, mediaType: file.type, kind: isPdf ? "document" : "image", data: base64 });
+      setAttachedFile({ name: file.name, mediaType: file.type, kind, data: base64 });
     };
     reader.onerror = () => setAttachError("Gagal membaca file. Coba lagi.");
     reader.readAsDataURL(file);
@@ -313,7 +319,7 @@ export default function VeraChat({ onLogout }) {
           <input
             ref={fileInputRef}
             type="file"
-            accept="application/pdf,image/*"
+            accept="application/pdf,image/*,.xlsx,.xls,.csv"
             style={{ display: "none" }}
             onChange={handleFileSelect}
           />

@@ -48,8 +48,6 @@ async function resolveIdByName(supabase, table, name) {
   return data?.id || null;
 }
 
-// Roles are simple enough to auto-create on first use (unlike
-// divisions/branches, which are deliberately managed via Settings).
 async function resolveOrCreateRoleId(supabase, name) {
   const roleName = name || "User";
   const existing = await resolveIdByName(supabase, "roles", roleName);
@@ -160,90 +158,7 @@ export async function deleteEmployee(id) {
   return { success: (count ?? 0) > 0 };
 }
 
-export async function bulkImportMasterList(kind, rows) {
-  const table = kind === "branches" ? "branches" : "divisions";
-  const supabase = await createClient();
-
-  const { data: existingRows } = await supabase.from(table).select("id, name");
-  const idSet = new Set((existingRows || []).map((r) => r.id));
-  const nameLowerToId = new Map((existingRows || []).map((r) => [r.name.toLowerCase(), r.id]));
-  const usedNamesLower = new Set((existingRows || []).map((r) => r.name.toLowerCase()));
-
-  const results = [];
-
-  for (let i = 0; i < rows.length; i++) {
-    const rowLabel = `Row ${i + 2}`;
-    const id = (rows[i].id || "").trim();
-    const name = (rows[i].name || "").trim();
-
-    if (!name) {
-      results.push({ row: rowLabel, name, action: "failed", success: false, error: "Name is empty." });
-      continue;
-    }
-
-    if (id) {
-      // ---- RENAME (matched by ID) ----
-      if (!idSet.has(id)) {
-        results.push({
-          row: rowLabel,
-          name,
-          action: "failed",
-          success: false,
-          error: "ID not found — leave the ID column blank to add this as new instead.",
-        });
-        continue;
-      }
-
-      const currentNameLower = [...nameLowerToId.entries()].find(([, v]) => v === id)?.[0];
-      const isDuplicate = usedNamesLower.has(name.toLowerCase()) && name.toLowerCase() !== currentNameLower;
-      if (isDuplicate) {
-        results.push({ row: rowLabel, name, action: "failed", success: false, error: `"${name}" already exists.` });
-        continue;
-      }
-
-      const { error } = await supabase.from(table).update({ name }).eq("id", id);
-      if (error) {
-        results.push({ row: rowLabel, name, action: "failed", success: false, error: error.message });
-        continue;
-      }
-
-      if (currentNameLower) usedNamesLower.delete(currentNameLower);
-      usedNamesLower.add(name.toLowerCase());
-      nameLowerToId.set(name.toLowerCase(), id);
-      results.push({ row: rowLabel, name, action: "updated", success: true, error: null });
-      continue;
-    }
-
-    // ---- CREATE (ID left blank) ----
-    if (usedNamesLower.has(name.toLowerCase())) {
-      results.push({ row: rowLabel, name, action: "failed", success: false, error: `"${name}" already exists.` });
-      continue;
-    }
-
-    const { data: inserted, error } = await supabase.from(table).insert({ name }).select("id").single();
-    if (error) {
-      results.push({ row: rowLabel, name, action: "failed", success: false, error: error.message });
-      continue;
-    }
-
-    idSet.add(inserted.id);
-    usedNamesLower.add(name.toLowerCase());
-    nameLowerToId.set(name.toLowerCase(), inserted.id);
-    results.push({ row: rowLabel, name, action: "created", success: true, error: null });
-  }
-
-  const created = results.filter((r) => r.action === "created").length;
-  const updated = results.filter((r) => r.action === "updated").length;
-  const failed = results.filter((r) => !r.success).length;
-
-  return { success: true, total: rows.length, created, updated, failed, results };
-}
-
-// ---------- Bulk import (create or update) ----------
-// Matches existing employees by Employee ID first, then by Email. If a
-// match is found, only the columns that have a value in the file are
-// updated (blank cells never overwrite existing data). No match -> a new
-// employee is created, same as before.
+// ---------- Bulk import: Employees (create or update, matched by ID/Email) ----------
 export async function bulkImportEmployees(rows) {
   const supabase = await createClient();
 
@@ -309,7 +224,6 @@ export async function bulkImportEmployees(rows) {
     const existingCode = (rawCode && codeByLower.get(rawCode.toLowerCase())) || codeByEmail.get(email) || null;
 
     if (existingCode) {
-      // ---- UPDATE ----
       const update = {};
       if (r.name) update.name = r.name.trim();
       if (r.email) update.email = email;
@@ -337,7 +251,6 @@ export async function bulkImportEmployees(rows) {
       continue;
     }
 
-    // ---- CREATE ----
     if (!r.name) {
       results.push({ row: rowLabel, email, action: "failed", success: false, error: "Name is required for new employees." });
       continue;
@@ -397,6 +310,16 @@ export async function getDivisions() {
   return (data || []).map((d) => d.name);
 }
 
+export async function getDivisionsWithId() {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("divisions").select("id, name").order("name");
+  if (error) {
+    console.error("getDivisionsWithId:", error.message);
+    return [];
+  }
+  return data || [];
+}
+
 export async function addDivision(name) {
   const supabase = await createClient();
   const { error } = await supabase.from("divisions").insert({ name });
@@ -435,6 +358,16 @@ export async function getBranches() {
   return (data || []).map((b) => b.name);
 }
 
+export async function getBranchesWithId() {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("branches").select("id, name").order("name");
+  if (error) {
+    console.error("getBranchesWithId:", error.message);
+    return [];
+  }
+  return data || [];
+}
+
 export async function addBranch(name) {
   const supabase = await createClient();
   const { error } = await supabase.from("branches").insert({ name });
@@ -462,23 +395,86 @@ export async function renameBranch(oldName, newName) {
   return { success: true };
 }
 
-// ---------- Divisions/Branches with id (used for the export template) ----------
-export async function getDivisionsWithId() {
+// ---------- Bulk import: Divisions/Branches (create or rename via ID) ----------
+// Matches existing rows by their UUID (the "ID" column from the export
+// template). ID filled + matches an existing row -> renames it to
+// whatever's in the Name column. ID left blank -> creates a new row. An
+// ID that doesn't match anything existing is treated as an error (instead
+// of silently creating a new row) so a typo'd ID doesn't sneak in as a
+// duplicate.
+export async function bulkImportMasterList(kind, rows) {
+  const table = kind === "branches" ? "branches" : "divisions";
   const supabase = await createClient();
-  const { data, error } = await supabase.from("divisions").select("id, name").order("name");
-  if (error) {
-    console.error("getDivisionsWithId:", error.message);
-    return [];
-  }
-  return data || [];
-}
 
-export async function getBranchesWithId() {
-  const supabase = await createClient();
-  const { data, error } = await supabase.from("branches").select("id, name").order("name");
-  if (error) {
-    console.error("getBranchesWithId:", error.message);
-    return [];
+  const { data: existingRows } = await supabase.from(table).select("id, name");
+  const idSet = new Set((existingRows || []).map((r) => r.id));
+  const nameLowerToId = new Map((existingRows || []).map((r) => [r.name.toLowerCase(), r.id]));
+  const usedNamesLower = new Set((existingRows || []).map((r) => r.name.toLowerCase()));
+
+  const results = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const rowLabel = `Row ${i + 2}`;
+    const id = (rows[i].id || "").trim();
+    const name = (rows[i].name || "").trim();
+
+    if (!name) {
+      results.push({ row: rowLabel, name, action: "failed", success: false, error: "Name is empty." });
+      continue;
+    }
+
+    if (id) {
+      if (!idSet.has(id)) {
+        results.push({
+          row: rowLabel,
+          name,
+          action: "failed",
+          success: false,
+          error: "ID not found — leave the ID column blank to add this as new instead.",
+        });
+        continue;
+      }
+
+      const currentNameLower = [...nameLowerToId.entries()].find(([, v]) => v === id)?.[0];
+      const isDuplicate = usedNamesLower.has(name.toLowerCase()) && name.toLowerCase() !== currentNameLower;
+      if (isDuplicate) {
+        results.push({ row: rowLabel, name, action: "failed", success: false, error: `"${name}" already exists.` });
+        continue;
+      }
+
+      const { error } = await supabase.from(table).update({ name }).eq("id", id);
+      if (error) {
+        results.push({ row: rowLabel, name, action: "failed", success: false, error: error.message });
+        continue;
+      }
+
+      if (currentNameLower) usedNamesLower.delete(currentNameLower);
+      usedNamesLower.add(name.toLowerCase());
+      nameLowerToId.set(name.toLowerCase(), id);
+      results.push({ row: rowLabel, name, action: "updated", success: true, error: null });
+      continue;
+    }
+
+    if (usedNamesLower.has(name.toLowerCase())) {
+      results.push({ row: rowLabel, name, action: "failed", success: false, error: `"${name}" already exists.` });
+      continue;
+    }
+
+    const { data: inserted, error } = await supabase.from(table).insert({ name }).select("id").single();
+    if (error) {
+      results.push({ row: rowLabel, name, action: "failed", success: false, error: error.message });
+      continue;
+    }
+
+    idSet.add(inserted.id);
+    usedNamesLower.add(name.toLowerCase());
+    nameLowerToId.set(name.toLowerCase(), inserted.id);
+    results.push({ row: rowLabel, name, action: "created", success: true, error: null });
   }
-  return data || [];
+
+  const created = results.filter((r) => r.action === "created").length;
+  const updated = results.filter((r) => r.action === "updated").length;
+  const failed = results.filter((r) => !r.success).length;
+
+  return { success: true, total: rows.length, created, updated, failed, results };
 }
