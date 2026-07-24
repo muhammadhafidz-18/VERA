@@ -1,6 +1,6 @@
 // src/app/employees/page.js
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import Icon from "@/lib/Icon";
 import Pagination from "@/components/employees/Pagination";
@@ -24,6 +24,17 @@ export default function EmployeesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState(null);
   const [confirmDeleteEmployee, setConfirmDeleteEmployee] = useState(null);
+
+  // --- Import/Export ---
+  const fileInputRef = useRef(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const [toast, setToast] = useState("");
+
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(""), 3000);
+  };
 
   useEffect(() => {
     async function load() {
@@ -106,12 +117,37 @@ export default function EmployeesPage() {
     setConfirmDeleteEmployee(null);
   };
 
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+
+    setImporting(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/employees/import", { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error || "Import failed.");
+        return;
+      }
+      setImportResult(data);
+      const refreshed = await fetch("/api/employees").then((r) => r.json());
+      setEmployees(refreshed.employees || []);
+    } catch (err) {
+      showToast("Network error while importing.");
+    } finally {
+      setImporting(false);
+    }
+  };
+
   if (loading) {
-  return (
-    <DashboardLayout>
-      <EmployeesPageSkeleton />
-    </DashboardLayout>
-  );
+    return (
+      <DashboardLayout>
+        <EmployeesPageSkeleton />
+      </DashboardLayout>
+    );
   }
 
   return (
@@ -135,15 +171,30 @@ export default function EmployeesPage() {
 
         <div className="section-header">
           <div className="section-title">Employee Directory</div>
-          <button
-            className="btn btn-primary"
-            onClick={() => {
-              setEditingEmployee(null);
-              setModalOpen(true);
-            }}
-          >
-            <Icon name="plus" size={14} /> Add Employee
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              ref={fileInputRef}
+              style={{ display: "none" }}
+              onChange={handleImportFile}
+            />
+            <button className="btn btn-secondary" onClick={() => fileInputRef.current?.click()} disabled={importing}>
+              <Icon name="upload" size={14} /> {importing ? "Importing…" : "Import"}
+            </button>
+            <a className="btn btn-secondary" href="/api/employees/export">
+              <Icon name="download" size={14} /> Export
+            </a>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                setEditingEmployee(null);
+                setModalOpen(true);
+              }}
+            >
+              <Icon name="plus" size={14} /> Add Employee
+            </button>
+          </div>
         </div>
 
         <div className="filters">
@@ -265,6 +316,94 @@ export default function EmployeesPage() {
             onCancel={() => setConfirmDeleteEmployee(null)}
             onConfirm={() => handleDeleteConfirm(confirmDeleteEmployee)}
           />
+        )}
+
+        {importResult && (
+          <div className="modal-overlay" onClick={() => setImportResult(null)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-head">
+                <h3>Import Result</h3>
+                <button className="btn-icon" onClick={() => setImportResult(null)}>
+                  <Icon name="x" size={14} />
+                </button>
+              </div>
+              <div className="modal-body">
+                {importResult.failed === 0 ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
+                    <div
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: "50%",
+                        background: "rgba(34,197,94,0.12)",
+                        color: "var(--green)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Icon name="check" size={16} />
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>Import berhasil</div>
+                      <div style={{ fontSize: 12.5, color: "var(--text2)" }}>
+                        {importResult.total} data karyawan berhasil diproses ({importResult.created} baru, {importResult.updated} diperbarui).
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0 16px" }}>
+                      <div
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: "50%",
+                          background: "rgba(234,179,8,0.12)",
+                          color: "#eab308",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                        }}
+                      >
+                        <Icon name="alert-triangle" size={16} />
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>Import selesai dengan beberapa catatan</div>
+                        <div style={{ fontSize: 12.5, color: "var(--text2)" }}>
+                          {importResult.created + importResult.updated} berhasil ({importResult.created} baru, {importResult.updated} diperbarui), {importResult.failed} gagal dari {importResult.total} baris.
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
+                      {importResult.results
+                        .filter((r) => !r.success)
+                        .map((r, i) => (
+                          <div
+                            key={i}
+                            style={{
+                              padding: "8px 12px",
+                              borderTop: i === 0 ? "none" : "1px solid var(--border)",
+                              fontSize: 12.5,
+                            }}
+                          >
+                            <b>{r.row}</b> {r.email && `(${r.email})`} — <span style={{ color: "var(--red)" }}>{r.error}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {toast && (
+          <div className="toast">
+            <b>&#10003;</b> {toast}
+          </div>
         )}
       </div>
     </DashboardLayout>

@@ -160,6 +160,232 @@ export async function deleteEmployee(id) {
   return { success: (count ?? 0) > 0 };
 }
 
+export async function bulkImportMasterList(kind, rows) {
+  const table = kind === "branches" ? "branches" : "divisions";
+  const supabase = await createClient();
+
+  const { data: existingRows } = await supabase.from(table).select("id, name");
+  const idSet = new Set((existingRows || []).map((r) => r.id));
+  const nameLowerToId = new Map((existingRows || []).map((r) => [r.name.toLowerCase(), r.id]));
+  const usedNamesLower = new Set((existingRows || []).map((r) => r.name.toLowerCase()));
+
+  const results = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const rowLabel = `Row ${i + 2}`;
+    const id = (rows[i].id || "").trim();
+    const name = (rows[i].name || "").trim();
+
+    if (!name) {
+      results.push({ row: rowLabel, name, action: "failed", success: false, error: "Name is empty." });
+      continue;
+    }
+
+    if (id) {
+      // ---- RENAME (matched by ID) ----
+      if (!idSet.has(id)) {
+        results.push({
+          row: rowLabel,
+          name,
+          action: "failed",
+          success: false,
+          error: "ID not found — leave the ID column blank to add this as new instead.",
+        });
+        continue;
+      }
+
+      const currentNameLower = [...nameLowerToId.entries()].find(([, v]) => v === id)?.[0];
+      const isDuplicate = usedNamesLower.has(name.toLowerCase()) && name.toLowerCase() !== currentNameLower;
+      if (isDuplicate) {
+        results.push({ row: rowLabel, name, action: "failed", success: false, error: `"${name}" already exists.` });
+        continue;
+      }
+
+      const { error } = await supabase.from(table).update({ name }).eq("id", id);
+      if (error) {
+        results.push({ row: rowLabel, name, action: "failed", success: false, error: error.message });
+        continue;
+      }
+
+      if (currentNameLower) usedNamesLower.delete(currentNameLower);
+      usedNamesLower.add(name.toLowerCase());
+      nameLowerToId.set(name.toLowerCase(), id);
+      results.push({ row: rowLabel, name, action: "updated", success: true, error: null });
+      continue;
+    }
+
+    // ---- CREATE (ID left blank) ----
+    if (usedNamesLower.has(name.toLowerCase())) {
+      results.push({ row: rowLabel, name, action: "failed", success: false, error: `"${name}" already exists.` });
+      continue;
+    }
+
+    const { data: inserted, error } = await supabase.from(table).insert({ name }).select("id").single();
+    if (error) {
+      results.push({ row: rowLabel, name, action: "failed", success: false, error: error.message });
+      continue;
+    }
+
+    idSet.add(inserted.id);
+    usedNamesLower.add(name.toLowerCase());
+    nameLowerToId.set(name.toLowerCase(), inserted.id);
+    results.push({ row: rowLabel, name, action: "created", success: true, error: null });
+  }
+
+  const created = results.filter((r) => r.action === "created").length;
+  const updated = results.filter((r) => r.action === "updated").length;
+  const failed = results.filter((r) => !r.success).length;
+
+  return { success: true, total: rows.length, created, updated, failed, results };
+}
+
+// ---------- Bulk import (create or update) ----------
+// Matches existing employees by Employee ID first, then by Email. If a
+// match is found, only the columns that have a value in the file are
+// updated (blank cells never overwrite existing data). No match -> a new
+// employee is created, same as before.
+export async function bulkImportEmployees(rows) {
+  const supabase = await createClient();
+
+  const [{ data: divisionRows }, { data: branchRows }, { data: roleRows }, { data: existingEmployees }] = await Promise.all([
+    supabase.from("divisions").select("id, name"),
+    supabase.from("branches").select("id, name"),
+    supabase.from("roles").select("id, name"),
+    supabase.from("employees").select("employee_code, email"),
+  ]);
+
+  const divisionMap = new Map((divisionRows || []).map((d) => [d.name.toLowerCase(), d.id]));
+  const branchMap = new Map((branchRows || []).map((b) => [b.name.toLowerCase(), b.id]));
+  const roleMap = new Map((roleRows || []).map((r) => [r.name.toLowerCase(), r.id]));
+
+  const codeByLower = new Map((existingEmployees || []).map((e) => [e.employee_code.toLowerCase(), e.employee_code]));
+  const codeByEmail = new Map((existingEmployees || []).map((e) => [e.email.toLowerCase(), e.employee_code]));
+
+  let nextCodeNum =
+    Math.max(
+      0,
+      ...(existingEmployees || [])
+        .map((e) => parseInt(String(e.employee_code).replace(/[^0-9]/g, ""), 10))
+        .filter((n) => !isNaN(n))
+    ) + 1;
+
+  async function resolveRoleId(roleName) {
+    let roleId = roleMap.get(roleName.toLowerCase());
+    if (!roleId) {
+      const { data: newRole, error } = await supabase.from("roles").insert({ name: roleName }).select("id").single();
+      if (!error) {
+        roleId = newRole.id;
+        roleMap.set(roleName.toLowerCase(), roleId);
+      }
+    }
+    return roleId || null;
+  }
+
+  const results = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const rowLabel = `Row ${i + 2}`;
+    const email = (r.email || "").trim().toLowerCase();
+    const rawCode = (r.id || "").trim();
+
+    if (!email) {
+      results.push({ row: rowLabel, email, action: "failed", success: false, error: "Email is required." });
+      continue;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      results.push({ row: rowLabel, email, action: "failed", success: false, error: "Invalid email format." });
+      continue;
+    }
+    if (r.division && !divisionMap.has(r.division.toLowerCase())) {
+      results.push({ row: rowLabel, email, action: "failed", success: false, error: `Division "${r.division}" doesn't exist.` });
+      continue;
+    }
+    if (r.branch && !branchMap.has(r.branch.toLowerCase())) {
+      results.push({ row: rowLabel, email, action: "failed", success: false, error: `Branch "${r.branch}" doesn't exist.` });
+      continue;
+    }
+
+    const existingCode = (rawCode && codeByLower.get(rawCode.toLowerCase())) || codeByEmail.get(email) || null;
+
+    if (existingCode) {
+      // ---- UPDATE ----
+      const update = {};
+      if (r.name) update.name = r.name.trim();
+      if (r.email) update.email = email;
+      if (r.birthDate) update.birth_date = r.birthDate;
+      if (r.joinDate) update.join_date = r.joinDate;
+      if (r.phone) update.phone = r.phone;
+      if (r.identityNumber) update.identity_number = r.identityNumber;
+      if (r.address) update.address = r.address;
+      if (r.division) update.division_id = divisionMap.get(r.division.toLowerCase());
+      if (r.branch) update.branch_id = branchMap.get(r.branch.toLowerCase());
+      if (r.role) update.role_id = await resolveRoleId(r.role.trim());
+
+      if (Object.keys(update).length === 0) {
+        results.push({ row: rowLabel, email, action: "skipped", success: true, error: null });
+        continue;
+      }
+
+      const { error } = await supabase.from("employees").update(update).eq("employee_code", existingCode);
+      if (error) {
+        results.push({ row: rowLabel, email, action: "failed", success: false, error: error.message });
+        continue;
+      }
+      codeByEmail.set(email, existingCode);
+      results.push({ row: rowLabel, email, action: "updated", success: true, error: null });
+      continue;
+    }
+
+    // ---- CREATE ----
+    if (!r.name) {
+      results.push({ row: rowLabel, email, action: "failed", success: false, error: "Name is required for new employees." });
+      continue;
+    }
+
+    let code = rawCode;
+    if (code && codeByLower.has(code.toLowerCase())) {
+      results.push({ row: rowLabel, email, action: "failed", success: false, error: `Employee ID "${code}" already used.` });
+      continue;
+    }
+    if (!code) {
+      code = `EMP-${String(nextCodeNum).padStart(4, "0")}`;
+      nextCodeNum++;
+    }
+
+    const roleId = await resolveRoleId((r.role || "User").trim());
+
+    const { error } = await supabase.from("employees").insert({
+      employee_code: code,
+      name: r.name.trim(),
+      email,
+      role_id: roleId,
+      birth_date: r.birthDate || null,
+      division_id: r.division ? divisionMap.get(r.division.toLowerCase()) : null,
+      branch_id: r.branch ? branchMap.get(r.branch.toLowerCase()) : null,
+      join_date: r.joinDate || new Date().toISOString().slice(0, 10),
+      phone: r.phone || null,
+      identity_number: r.identityNumber || null,
+      address: r.address || null,
+    });
+
+    if (error) {
+      results.push({ row: rowLabel, email, action: "failed", success: false, error: error.message });
+      continue;
+    }
+
+    codeByLower.set(code.toLowerCase(), code);
+    codeByEmail.set(email, code);
+    results.push({ row: rowLabel, email, action: "created", success: true, error: null });
+  }
+
+  const created = results.filter((r) => r.action === "created").length;
+  const updated = results.filter((r) => r.action === "updated").length;
+  const failed = results.filter((r) => !r.success).length;
+
+  return { success: true, total: rows.length, created, updated, failed, results };
+}
+
 // ---------- Divisions ----------
 export async function getDivisions() {
   const supabase = await createClient();
@@ -234,4 +460,25 @@ export async function renameBranch(oldName, newName) {
     return { success: false, error: error.message };
   }
   return { success: true };
+}
+
+// ---------- Divisions/Branches with id (used for the export template) ----------
+export async function getDivisionsWithId() {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("divisions").select("id, name").order("name");
+  if (error) {
+    console.error("getDivisionsWithId:", error.message);
+    return [];
+  }
+  return data || [];
+}
+
+export async function getBranchesWithId() {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("branches").select("id, name").order("name");
+  if (error) {
+    console.error("getBranchesWithId:", error.message);
+    return [];
+  }
+  return data || [];
 }
