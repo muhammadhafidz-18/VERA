@@ -35,7 +35,7 @@ export default function UserManagementTab() {
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch("/api/employees");
+      const res = await fetch("/api/employees?status=all"); // include resigned employees too
       const data = await safeJson(res);
       setUsers(
         (data.employees || []).map((e) => ({
@@ -43,6 +43,7 @@ export default function UserManagementTab() {
           name: e.name,
           email: e.email,
           role: e.role,
+          status: e.status || "active",
           authUserId: e.authUserId,
         }))
       );
@@ -65,18 +66,18 @@ export default function UserManagementTab() {
   const currentPage = Math.min(page, totalPages);
   const paged = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
-  const handleDelete = async (id) => {
-    if (!confirm(`Deactivate access for ${id}?`)) return;
+  const handleDelete = async (user) => {
+    if (!confirm(`Permanently delete ${user.name} (${user.id})? This removes their record and login access for good and can't be undone. To just mark them as resigned instead, use Employee Directory.`)) return;
     try {
-      const res = await fetch(`/api/employees/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const res = await fetch(`/api/employees/${encodeURIComponent(user.id)}`, { method: "DELETE" });
       if (res.ok) {
-        setUsers((list) => list.filter((u) => u.id !== id));
+        setUsers((list) => list.filter((u) => u.id !== user.id));
       } else {
         const data = await safeJson(res);
-        showToast(data.error || "Failed to deactivate employee.");
+        showToast(data.error || "Failed to delete employee.");
       }
     } catch (err) {
-      showToast("Network error while deactivating employee.");
+      showToast("Network error while deleting employee.");
     }
   };
 
@@ -161,14 +162,15 @@ export default function UserManagementTab() {
               <th>Name</th>
               <th>Email</th>
               <th>Role</th>
-              <th>Status</th>
+              <th>Employment</th>
+              <th>Access</th>
               <th>Action</th>
             </tr>
           </thead>
           <tbody>
             {paged.length === 0 && (
               <tr>
-                <td colSpan={6} style={{ textAlign: "center", padding: "32px 16px", color: "var(--text3)" }}>
+                <td colSpan={7} style={{ textAlign: "center", padding: "32px 16px", color: "var(--text3)" }}>
                   No Data Available
                 </td>
               </tr>
@@ -180,6 +182,11 @@ export default function UserManagementTab() {
                 <td className="mono">{u.email}</td>
                 <td>
                   <span className={`badge ${u.role === "Superadmin" ? "purple" : "gray"}`}>{u.role}</span>
+                </td>
+                <td>
+                  <span className={`badge ${u.status === "inactive" ? "gray" : "green"}`}>
+                    {u.status === "inactive" ? "Resigned" : "Active"}
+                  </span>
                 </td>
                 <td>
                   <span className={`badge ${u.authUserId ? "green" : "yellow"}`}>
@@ -201,7 +208,7 @@ export default function UserManagementTab() {
                   <button className="btn-icon" title="Edit Role" onClick={() => setEditing(u)}>
                     <Icon name="pencil" size={13} />
                   </button>
-                  <button className="btn-icon" style={{ color: "var(--red)" }} title="Deactivate" onClick={() => handleDelete(u.id)}>
+                  <button className="btn-icon" style={{ color: "var(--red)" }} title="Delete permanently" onClick={() => handleDelete(u)}>
                     <Icon name="trash" size={13} />
                   </button>
                 </td>

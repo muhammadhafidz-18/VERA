@@ -6,9 +6,13 @@ import Icon from "@/lib/Icon";
 import Pagination from "@/components/employees/Pagination";
 import AgeCard from "@/components/employees/AgeCard";
 import EmployeeFormModal from "@/components/employees/EmployeeFormModal";
-import ConfirmModal from "@/components/shared/ConfirmModal";
+import ResignFormModal from "@/components/employees/ResignFormModal";
+import EmployeeFilterMenu from "@/components/employees/EmployeeFilterMenu";
+import ColumnSettingsMenu, { DEFAULT_VISIBLE_COLUMNS } from "@/components/employees/ColumnSettingsMenu";
 import { AGE_BRACKETS, getAge, PAGE_SIZE } from "@/lib/vera/employeeHelpers";
 import EmployeesPageSkeleton from "@/components/shared/skeletons/EmployeesPageSkeleton";
+
+const COLUMN_STORAGE_KEY = "vera_employee_columns";
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState([]);
@@ -20,10 +24,12 @@ export default function EmployeesPage() {
   const [divisionFilter, setDivisionFilter] = useState("");
   const [branchFilter, setBranchFilter] = useState("");
   const [ageFilter, setAgeFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("active"); // "active" | "inactive" | "all"
   const [page, setPage] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState(null);
-  const [confirmDeleteEmployee, setConfirmDeleteEmployee] = useState(null);
+  const [resignTargetEmployee, setResignTargetEmployee] = useState(null);
+  const [visibleColumns, setVisibleColumns] = useState(DEFAULT_VISIBLE_COLUMNS);
 
   // --- Import/Export ---
   const fileInputRef = useRef(null);
@@ -36,10 +42,31 @@ export default function EmployeesPage() {
     setTimeout(() => setToast(""), 3000);
   };
 
+  // Load saved column preference once on mount (client-only — localStorage
+  // isn't available during SSR).
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(COLUMN_STORAGE_KEY);
+      if (saved) setVisibleColumns({ ...DEFAULT_VISIBLE_COLUMNS, ...JSON.parse(saved) });
+    } catch {
+      // ignore malformed/unavailable storage — falls back to defaults
+    }
+  }, []);
+
+  const handleColumnsChange = (next) => {
+    setVisibleColumns(next);
+    try {
+      localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // storage unavailable (e.g. private browsing) — preference just
+      // won't persist across reloads, not worth surfacing to the user
+    }
+  };
+
   useEffect(() => {
     async function load() {
       const [empRes, divRes, brRes] = await Promise.all([
-        fetch("/api/employees").then((r) => r.json()),
+        fetch("/api/employees?status=all").then((r) => r.json()),
         fetch("/api/settings/divisions").then((r) => r.json()),
         fetch("/api/settings/branches").then((r) => r.json()),
       ]);
@@ -60,8 +87,11 @@ export default function EmployeesPage() {
     const matchBranch = !branchFilter || e.branch === branchFilter;
     const bracket = AGE_BRACKETS.find((b) => b.key === ageFilter);
     const matchAge = !ageFilter || (bracket && bracket.test(getAge(e.birthDate)));
-    return matchSearch && matchDivision && matchBranch && matchAge;
+    const matchStatus = statusFilter === "all" || (e.status || "active") === statusFilter;
+    return matchSearch && matchDivision && matchBranch && matchAge && matchStatus;
   });
+
+  const activeEmployees = employees.filter((e) => (e.status || "active") === "active");
 
   const pageSize = PAGE_SIZE;
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -72,12 +102,25 @@ export default function EmployeesPage() {
     setSearch(e.target.value);
     setPage(1);
   };
-  const handleDivisionChange = (e) => {
-    setDivisionFilter(e.target.value);
+
+  const applyDivisionFilter = (val) => {
+    setDivisionFilter(val);
     setPage(1);
   };
-  const handleBranchChange = (e) => {
-    setBranchFilter(e.target.value);
+  const applyBranchFilter = (val) => {
+    setBranchFilter(val);
+    setPage(1);
+  };
+  const applyStatusFilter = (val) => {
+    setStatusFilter(val);
+    setPage(1);
+  };
+  const resetAllFilters = () => {
+    setSearch("");
+    setDivisionFilter("");
+    setBranchFilter("");
+    setAgeFilter("");
+    setStatusFilter("active");
     setPage(1);
   };
 
@@ -111,10 +154,39 @@ export default function EmployeesPage() {
     setEditingEmployee(null);
   };
 
-  const handleDeleteConfirm = async (employee) => {
-    const res = await fetch(`/api/employees/${encodeURIComponent(employee.id)}`, { method: "DELETE" });
-    if (res.ok) setEmployees((list) => list.filter((e) => e.id !== employee.id));
-    setConfirmDeleteEmployee(null);
+  const handleResignConfirm = async (employee, resignDate) => {
+    const res = await fetch(`/api/employees/${encodeURIComponent(employee.id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "resign", resignDate }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setEmployees((list) => list.map((e) => (e.id === employee.id ? data.employee : e)));
+      showToast(
+        data.employee.status === "inactive"
+          ? `${employee.name} has been marked as resigned.`
+          : `${employee.name}'s resignation has been scheduled for ${resignDate}.`
+      );
+    } else {
+      showToast(data.error || "Failed to resign employee.");
+    }
+    setResignTargetEmployee(null);
+  };
+
+  const handleReactivate = async (employee) => {
+    const res = await fetch(`/api/employees/${encodeURIComponent(employee.id)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "reactivate" }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setEmployees((list) => list.map((e) => (e.id === employee.id ? data.employee : e)));
+      showToast(`${employee.name} has been reactivated.`);
+    } else {
+      showToast(data.error || "Failed to reactivate employee.");
+    }
   };
 
   const handleImportFile = async (e) => {
@@ -133,7 +205,7 @@ export default function EmployeesPage() {
         return;
       }
       setImportResult(data);
-      const refreshed = await fetch("/api/employees").then((r) => r.json());
+      const refreshed = await fetch("/api/employees?status=all").then((r) => r.json());
       setEmployees(refreshed.employees || []);
     } catch (err) {
       showToast("Network error while importing.");
@@ -150,17 +222,20 @@ export default function EmployeesPage() {
     );
   }
 
+  const hasAnyFilter = search || divisionFilter || branchFilter || ageFilter || statusFilter !== "active";
+  const colCount = 3 + Object.values(visibleColumns).filter(Boolean).length; // ID + Name + Action are fixed
+
   return (
     <DashboardLayout>
       <div>
         <div className="stat-grid" style={{ gridTemplateColumns: "220px 320px", marginBottom: 20 }}>
           <div className="stat-card blue">
             <div className="stat-label">Total Employees</div>
-            <div className="stat-value">{employees.length}</div>
+            <div className="stat-value">{activeEmployees.length}</div>
             <div className="stat-sub">Currently active</div>
           </div>
           <AgeCard
-            employees={employees}
+            employees={activeEmployees}
             ageFilter={ageFilter}
             onSelectBracket={(key) => {
               setAgeFilter((prev) => (prev === key ? "" : key));
@@ -198,42 +273,37 @@ export default function EmployeesPage() {
         </div>
 
         <div className="filters">
-          <div className="input-wrap" style={{ width: 240 }}>
-            <span className="input-icon">
-              <Icon name="search" size={14} />
-            </span>
-            <input className="input has-icon" placeholder="Search name, ID, or email..." value={search} onChange={handleSearchChange} />
-          </div>
-          <select className="input" style={{ width: 180 }} value={divisionFilter} onChange={handleDivisionChange}>
-            <option value="">All Divisions</option>
-            {divisions.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-          <select className="input" style={{ width: 180 }} value={branchFilter} onChange={handleBranchChange}>
-            <option value="">All Branches</option>
-            {branches.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
-          {(search || divisionFilter || branchFilter || ageFilter) && (
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => {
-                setSearch("");
-                setDivisionFilter("");
-                setBranchFilter("");
-                setAgeFilter("");
-                setPage(1);
+            <div className="input-wrap" style={{ width: 240 }}>
+              <span className="input-icon">
+                <Icon name="search" size={14} />
+              </span>
+              <input className="input has-icon" placeholder="Search name, ID, or email..." value={search} onChange={handleSearchChange} />
+            </div>
+
+            <EmployeeFilterMenu
+              divisions={divisions}
+              branches={branches}
+              divisionFilter={divisionFilter}
+              branchFilter={branchFilter}
+              statusFilter={statusFilter}
+              onDivisionChange={applyDivisionFilter}
+              onBranchChange={applyBranchFilter}
+              onStatusChange={applyStatusFilter}
+              onReset={() => {
+                applyDivisionFilter("");
+                applyBranchFilter("");
+                applyStatusFilter("active");
               }}
-            >
-              Reset
-            </button>
-          )}
+            />
+
+            <ColumnSettingsMenu visibleColumns={visibleColumns} onChange={handleColumnsChange} />
+
+            {hasAnyFilter && (
+              <button className="btn btn-secondary btn-sm" onClick={resetAllFilters}>
+                Reset
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="table-wrap">
@@ -242,18 +312,20 @@ export default function EmployeesPage() {
               <tr>
                 <th>Employee ID</th>
                 <th>Name</th>
-                <th>Email</th>
-                <th>Branch</th>
-                <th>Division</th>
-                <th>Join Date</th>
-                <th>Phone Number</th>
+                {visibleColumns.email && <th>Email</th>}
+                {visibleColumns.branch && <th>Branch</th>}
+                {visibleColumns.division && <th>Division</th>}
+                {visibleColumns.joinDate && <th>Join Date</th>}
+                {visibleColumns.phone && <th>Phone Number</th>}
+                {visibleColumns.status && <th>Status</th>}
+                {visibleColumns.resignDate && <th>Resign Date</th>}
                 <th>Action</th>
               </tr>
             </thead>
             <tbody>
               {paged.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: "center", padding: "32px 16px", color: "var(--text3)" }}>
+                  <td colSpan={colCount} style={{ textAlign: "center", padding: "32px 16px", color: "var(--text3)" }}>
                     <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.4 }}>&#9900;</div>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>No Data Available</div>
                   </td>
@@ -263,11 +335,21 @@ export default function EmployeesPage() {
                 <tr key={e.id}>
                   <td className="mono">{e.id}</td>
                   <td style={{ fontWeight: 500 }}>{e.name}</td>
-                  <td className="mono">{e.email}</td>
-                  <td>{e.branch}</td>
-                  <td>{e.division}</td>
-                  <td className="mono">{e.joinDate}</td>
-                  <td className="mono">{e.phone}</td>
+                  {visibleColumns.email && <td className="mono">{e.email}</td>}
+                  {visibleColumns.branch && <td>{e.branch}</td>}
+                  {visibleColumns.division && <td>{e.division}</td>}
+                  {visibleColumns.joinDate && <td className="mono">{e.joinDate}</td>}
+                  {visibleColumns.phone && <td className="mono">{e.phone}</td>}
+                  {visibleColumns.status && (
+                    <td>
+                      {e.status === "inactive" ? (
+                        <span className="badge gray">Resigned</span>
+                      ) : (
+                        <span className="badge green">Active</span>
+                      )}
+                    </td>
+                  )}
+                  {visibleColumns.resignDate && <td className="mono">{e.resignDate || "-"}</td>}
                   <td>
                     <button
                       className="btn-icon"
@@ -279,14 +361,24 @@ export default function EmployeesPage() {
                     >
                       <Icon name="pencil" size={13} />
                     </button>
-                    <button
-                      className="btn-icon"
-                      style={{ color: "var(--red)" }}
-                      title="Delete"
-                      onClick={() => setConfirmDeleteEmployee(e)}
-                    >
-                      <Icon name="trash" size={13} />
-                    </button>
+                    {e.status === "inactive" ? (
+                      <button className="btn-icon" title="Reactivate" onClick={() => handleReactivate(e)}>
+                        <Icon name="refresh" size={13} />
+                      </button>
+                    ) : e.resignDate ? (
+                      <button className="btn-icon" title="Cancel scheduled resign" onClick={() => handleReactivate(e)}>
+                        <Icon name="x" size={13} />
+                      </button>
+                    ) : (
+                      <button
+                        className="btn-icon"
+                        style={{ color: "var(--red)" }}
+                        title="Resign"
+                        onClick={() => setResignTargetEmployee(e)}
+                      >
+                        <Icon name="logout" size={13} />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -309,12 +401,11 @@ export default function EmployeesPage() {
           />
         )}
 
-        {confirmDeleteEmployee && (
-          <ConfirmModal
-            title="Delete employee?"
-            message={`"${confirmDeleteEmployee.name}" (${confirmDeleteEmployee.id}) will be permanently deleted, including their login access. This can't be undone.`}
-            onCancel={() => setConfirmDeleteEmployee(null)}
-            onConfirm={() => handleDeleteConfirm(confirmDeleteEmployee)}
+        {resignTargetEmployee && (
+          <ResignFormModal
+            employee={resignTargetEmployee}
+            onClose={() => setResignTargetEmployee(null)}
+            onConfirm={(resignDate) => handleResignConfirm(resignTargetEmployee, resignDate)}
           />
         )}
 
@@ -405,7 +496,6 @@ export default function EmployeesPage() {
             <b>&#10003;</b> {toast}
           </div>
         )}
-      </div>
     </DashboardLayout>
   );
 }
