@@ -23,6 +23,8 @@ const VERA_TOOL_OPERATION_TYPE = {
   update_division: "UPDATE",
   update_branch: "UPDATE",
   update_meeting: "UPDATE",
+  resign_employee: "UPDATE",
+  reactivate_employee: "UPDATE",
   get_employees: "READ",
   get_meetings: "READ",
   get_tasks: "READ",
