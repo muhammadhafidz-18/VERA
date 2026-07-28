@@ -94,23 +94,6 @@ export const VERA_TOOLS = [
         description: { type: "string" },
         attendeeNames: { type: "array", items: { type: "string" }, description: "Names of employees to invite" },
       },
-      required: ["title", "date", "time"],
-    },
-  },
-  {
-    name: "create_meeting",
-    description: "Create a new meeting in the Meeting Schedule. Required: title, date, time. If the user hasn't given date/time/who it's with/what it's about, ask for the missing pieces first. Before creating, it's good practice to call get_meetings for the same date to check for a scheduling conflict.",
-    input_schema: {
-      type: "object",
-      properties: {
-        title: { type: "string" },
-        date: { type: "string", description: "Format YYYY-MM-DD" },
-        startTime: { type: "string", description: "24-hour format HH:MM" },
-        endTime: { type: "string", description: "24-hour format HH:MM" },
-        location: { type: "string" },
-        description: { type: "string" },
-        attendeeNames: { type: "array", items: { type: "string" }, description: "Names of employees to invite" },
-      },
       required: ["title", "date", "startTime", "endTime"],
     },
   },

@@ -2,6 +2,7 @@
 "use client";
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import Icon from "@/lib/Icon";
 import TaskIndex from "@/components/tasks/TaskIndex";
@@ -134,11 +135,16 @@ function TasksPageInner() {
     <DashboardLayout hideFloatingChat={view === "detail"}>
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
-          <div style={{ fontSize: 12.5, color: "var(--text2)" }}>Submit tasks, complaints, or requests to other divisions.</div>
+        <div style={{ fontSize: 12.5, color: "var(--text2)" }}>Submit tasks, complaints, or requests to other divisions.</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Link href="/tasks/digest" className="btn btn-secondary">
+            <Icon name="history" size={13} /> Digest Bulanan
+          </Link>
           <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
             <Icon name="plus" size={13} /> New Task
           </button>
         </div>
+      </div>
 
         {view === "index" && <TaskIndex tasks={tasks} onOpenTask={openTask} onDeleteTask={handleDeleteTask} employees={employees} />}
 

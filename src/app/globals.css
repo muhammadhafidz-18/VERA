@@ -20,7 +20,7 @@ body {
    V.E.R.A — full design system, ported 1:1 from the HTML prototype
    ===================================================================== */
 :root{
-  --bg:#FAFBFC;--bg2:#FFFFFF;--bg3:#F4F6F8;
+  --bg:#f4f4f4;--bg2:#FFFFFF;--bg3:#eeeeef;
   --border:#E8EBEF;--border2:#D6DAE0;
   --text:#1F2733;--text2:#5B6573;--text3:#94A0AE;
   --accent:#1D5FA0;--accent2:#123F70;--brand-start:#153E7A;--brand-mid:#1D7DAE;--brand-end:#22ACC7;
@@ -897,3 +897,180 @@ select.input{cursor:pointer}
 .meeting-guest-row{ display:flex; align-items:center; gap:10px; }
 .meeting-guest-name{ font-size:13px; color:var(--text); font-weight:500; }
 .meeting-guest-role{ font-size:11px; color:var(--text3); }
+
+/* ---------- Calendar view switcher (Day/Week/Month dropdown) ---------- */
+.cal-toolbar{ display:flex; align-items:center; justify-content:space-between; }
+.cal-view-switcher{ position:relative; }
+.cal-view-btn{
+  display:flex; align-items:center; gap:6px;
+  background:var(--card); border:1px solid var(--border); border-radius:20px;
+  padding:7px 14px; font-size:12.5px; font-weight:600; color:var(--text); cursor:pointer;
+}
+.cal-view-btn:hover{ background:var(--hover); }
+.cal-view-menu{
+  position:absolute; top:calc(100% + 6px); right:0; z-index:20;
+  background:var(--card); border:1px solid var(--border); border-radius:10px;
+  box-shadow:0 8px 24px -8px rgba(0,0,0,.25); padding:6px; min-width:150px;
+}
+.cal-view-menu-item{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:9px 12px; border-radius:6px; font-size:13px; color:var(--text); cursor:pointer;
+}
+.cal-view-menu-item:hover{ background:var(--hover); }
+.cal-view-menu-item.active{ color:var(--accent); font-weight:600; }
+.cal-view-menu-shortcut{ font-size:11px; color:var(--text3); }
+
+/* ---------- Day/Week hour-grid view ---------- */
+.cal-gridview{ margin-top:10px; border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+.cal-gridview-head{ display:grid; border-bottom:1px solid var(--border); }
+.cal-gridview-head-corner{ border-right:1px solid var(--border); }
+.cal-gridview-head-cell{
+  text-align:center; padding:8px 4px; cursor:pointer; border-right:1px solid var(--border);
+}
+.cal-gridview-head-cell:hover{ background:var(--hover); }
+.cal-gridview-head-dayname{ font-size:11px; color:var(--text3); font-weight:600; text-transform:uppercase; }
+.cal-gridview-head-daynum{ font-size:15px; font-weight:700; color:var(--text); margin-top:2px; }
+.cal-gridview-head-daynum.today{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:26px; height:26px; border-radius:50%; background:var(--accent); color:#fff;
+}
+.cal-gridview-head-cell.today{ background:rgba(37,99,235,.05); }
+
+.cal-gridview-body{ display:grid; position:relative; }
+.cal-gridview-hourcol{ border-right:1px solid var(--border); }
+.cal-gridview-hourlabel{
+  font-size:10.5px; color:var(--text3); text-align:right; padding:2px 6px 0 0;
+  box-sizing:border-box; position:relative; top:-6px;
+}
+.cal-gridview-daycol{ position:relative; border-right:1px solid var(--border); }
+.cal-gridview-hourline{ border-bottom:1px solid var(--border); box-sizing:border-box; }
+.cal-gridview-event{
+  position:absolute; left:4px; right:4px; border-radius:6px; padding:4px 6px;
+  overflow:hidden; cursor:pointer; box-sizing:border-box;
+}
+.cal-gridview-event-title{ font-size:11.5px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cal-gridview-event-time{ font-size:10px; color:var(--text3); }
+
+
+/* ---------- Monthly Digest ---------- */
+.task-digest-toolbar{display:flex;align-items:center;justify-content:center;gap:10px;margin:16px 0}
+.task-digest-nav{width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+.task-digest-nav:hover{background:var(--bg3)}
+.task-digest-label{font-size:13px;font-weight:600;color:var(--text);min-width:150px;text-align:center}
+.task-digest-note{font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.6}
+.task-digest-hero{background:linear-gradient(135deg,#60A5FA 0%,var(--accent) 45%,#1E3A8A 100%);border-radius:12px;padding:14px 16px}
+.task-digest-hero .lbl{font-size:10.5px;color:rgba(255,255,255,.85);font-weight:500;margin-bottom:4px}
+.task-digest-hero .val{font-size:19px;font-weight:700;color:#fff;font-family:'DM Mono',monospace}
+
+.print-only { display: none; }
+
+@media print {
+  @page { margin: 1.5cm; }
+
+  html, body {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  * {
+    color: #111 !important;
+    background: #fff !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    filter: none !important;
+    border-color: #111 !important;
+  }
+
+  .sidebar, .topbar, .no-print { display: none !important; }
+
+  .app-shell, .main, .content {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  body { font-family: 'Georgia', 'Times New Roman', serif !important; }
+
+  .print-only { display: block !important; }
+
+  .table-title {
+    font-size: 20px !important;
+    font-weight: 700 !important;
+    border-bottom: 2px solid #111;
+    padding-bottom: 10px;
+    margin-bottom: 4px !important;
+  }
+  .table-title svg { display: none; }
+
+  .task-digest-note {
+    font-size: 11px !important;
+    font-style: italic;
+    border-left: 3px solid #999;
+    padding-left: 10px;
+    margin: 10px 0 16px !important;
+  }
+
+  .print-only {
+    font-size: 13px !important;
+    font-weight: 600;
+    margin-bottom: 20px !important;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #ccc;
+  }
+
+  .stat-grid {
+    display: grid !important;
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 0 !important;
+    width: 100% !important;
+  }
+  .stat-card, .task-digest-hero {
+    border: 1px solid #111 !important;
+    border-radius: 0 !important;
+    margin: -1px 0 0 -1px;
+    padding: 14px !important;
+  }
+  .stat-label, .task-digest-hero .lbl {
+    font-size: 9.5px !important;
+    letter-spacing: 1px !important;
+    text-transform: uppercase;
+    font-weight: 700 !important;
+  }
+  .stat-value, .task-digest-hero .val {
+    font-size: 22px !important;
+    font-weight: 700 !important;
+  }
+
+  .form-row.two {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+  }
+  .card-note {
+    border: 1px solid #111 !important;
+    border-radius: 0 !important;
+    margin: -1px 0 0 -1px;
+  }
+
+  .task-ai-card {
+    border: 1px solid #111 !important;
+    border-radius: 0 !important;
+    border-top: none !important;
+    padding: 14px !important;
+  }
+  .task-ai-card-title { font-weight: 700 !important; font-size: 12px !important; }
+  .task-ai-card-title svg { display: none; }
+  .task-ai-card-body { font-size: 12.5px !important; line-height: 1.7 !important; }
+
+  .stat-card, .card-note, .task-digest-hero, .task-ai-card {
+    break-inside: avoid;
+  }
+}

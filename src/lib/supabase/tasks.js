@@ -433,3 +433,153 @@ export async function notifyOverdueTasks() {
 
   return { success: true, notified: notifiedCount };
 }
+
+// ---------- Monthly Digest ----------
+export async function computeMonthlyTaskStats(employeeCode, year, month, roleFilter = "all") {
+  // month: 1-12 (calendar convention, not JS's 0-11)
+  // roleFilter: "all" | "assigned_to_me" | "assigned_by_me"
+  const supabase = await createClient();
+  const { data: employee } = await supabase
+    .from("employees")
+    .select("id, name")
+    .eq("employee_code", employeeCode)
+    .maybeSingle();
+  if (!employee) return null;
+
+  const start = new Date(Date.UTC(year, month - 1, 1)).toISOString();
+  const end = new Date(Date.UTC(month === 12 ? year + 1 : year, month === 12 ? 0 : month, 1)).toISOString();
+
+  let query = supabase
+    .from("tasks")
+    .select("id, task_code, title, created_at, created_by, assigned_to")
+    .gte("created_at", start)
+    .lt("created_at", end);
+
+  if (roleFilter === "assigned_to_me") {
+    query = query.eq("assigned_to", employee.id);
+  } else if (roleFilter === "assigned_by_me") {
+    query = query.eq("created_by", employee.id);
+  } else {
+    query = query.or(`assigned_to.eq.${employee.id},created_by.eq.${employee.id}`);
+  }
+
+  const { data: tasksInMonth, error } = await query;
+
+  if (error) {
+    console.error("computeMonthlyTaskStats:", error.message);
+    return null;
+  }
+
+  const taskIds = (tasksInMonth || []).map((t) => t.id);
+  const firstResponseByTask = {};
+  const createdByTask = {};
+  (tasksInMonth || []).forEach((t) => {
+    createdByTask[t.id] = t.created_by;
+  });
+
+  if (taskIds.length) {
+    const { data: chats } = await supabase
+      .from("task_chats")
+      .select("task_id, sender_id, created_at")
+      .in("task_id", taskIds)
+      .eq("is_system", false)
+      .order("created_at", { ascending: true });
+
+    (chats || []).forEach((c) => {
+      if (firstResponseByTask[c.task_id]) return;
+      if (c.sender_id && c.sender_id !== createdByTask[c.task_id]) {
+        firstResponseByTask[c.task_id] = c.created_at;
+      }
+    });
+  }
+
+  const results = (tasksInMonth || []).map((t) => {
+    const createdAtMs = new Date(t.created_at).getTime();
+    const firstResponseIso = firstResponseByTask[t.id];
+    const responseMs = firstResponseIso ? new Date(firstResponseIso).getTime() - createdAtMs : null;
+    return {
+      taskCode: t.task_code,
+      title: t.title,
+      responseMs: responseMs != null && responseMs >= 0 ? responseMs : null,
+    };
+  });
+
+  const responded = results.filter((r) => r.responseMs != null);
+  const unresponded = results.filter((r) => r.responseMs == null);
+  const avgMs = responded.length > 0 ? responded.reduce((sum, r) => sum + r.responseMs, 0) / responded.length : null;
+
+  let fastest = null;
+  let slowest = null;
+  if (responded.length > 0) {
+    fastest = responded.reduce((a, b) => (a.responseMs < b.responseMs ? a : b));
+    slowest = responded.reduce((a, b) => (a.responseMs > b.responseMs ? a : b));
+  }
+
+  return {
+    employeeName: employee.name,
+    totalTickets: results.length,
+    respondedCount: responded.length,
+    unrespondedCount: unresponded.length,
+    avgMs,
+    fastest,
+    slowest,
+  };
+}
+
+export async function getMonthlyDigestNarrative(employeeCode, year, month) {
+  const supabase = await createClient();
+  const { data: employee } = await supabase.from("employees").select("id").eq("employee_code", employeeCode).maybeSingle();
+  if (!employee) return { narrative: null, generatedAt: null, generateCount: 0 };
+
+  const { data } = await supabase
+    .from("task_monthly_digests")
+    .select("narrative, narrative_generated_at, narrative_generate_count")
+    .eq("employee_id", employee.id)
+    .eq("year", year)
+    .eq("month", month)
+    .maybeSingle();
+
+  return data
+    ? {
+        narrative: data.narrative,
+        generatedAt: data.narrative_generated_at ? new Date(data.narrative_generated_at).getTime() : null,
+        generateCount: data.narrative_generate_count || 0,
+      }
+    : { narrative: null, generatedAt: null, generateCount: 0 };
+}
+
+export async function saveMonthlyDigestNarrative(employeeCode, year, month, narrative) {
+  const supabase = await createClient();
+  const { data: employee } = await supabase.from("employees").select("id").eq("employee_code", employeeCode).maybeSingle();
+  if (!employee) return { success: false, error: "Employee not found." };
+
+  const { data: existing } = await supabase
+    .from("task_monthly_digests")
+    .select("id, narrative_generate_count")
+    .eq("employee_id", employee.id)
+    .eq("year", year)
+    .eq("month", month)
+    .maybeSingle();
+
+  const nextCount = (existing?.narrative_generate_count || 0) + 1;
+  const nowIso = new Date().toISOString();
+
+  if (existing) {
+    const { error } = await supabase
+      .from("task_monthly_digests")
+      .update({ narrative, narrative_generated_at: nowIso, narrative_generate_count: nextCount, updated_at: nowIso })
+      .eq("id", existing.id);
+    if (error) return { success: false, error: error.message };
+  } else {
+    const { error } = await supabase.from("task_monthly_digests").insert({
+      employee_id: employee.id,
+      year,
+      month,
+      narrative,
+      narrative_generated_at: nowIso,
+      narrative_generate_count: nextCount,
+    });
+    if (error) return { success: false, error: error.message };
+  }
+  return { success: true, generateCount: nextCount };
+}
