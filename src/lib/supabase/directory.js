@@ -393,14 +393,14 @@ export async function bulkImportMasterList(target, rows) {
 }
 
 // ---------- Divisions ----------
-export async function getDivisions() {
+export async function getDivisionsWithId() {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("divisions").select("name").order("name");
+  const { data, error } = await supabase.from("divisions").select("id, name").order("name");
   if (error) {
-    console.error("getDivisions:", error.message);
+    console.error("getDivisionsWithId:", error.message);
     return [];
   }
-  return (data || []).map((d) => d.name);
+  return data || [];
 }
 
 export async function addDivision(name) {
@@ -431,14 +431,14 @@ export async function renameDivision(oldName, newName) {
 }
 
 // ---------- Branches ----------
-export async function getBranches() {
+export async function getBranchesWithId() {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("branches").select("name").order("name");
+  const { data, error } = await supabase.from("branches").select("id, name").order("name");
   if (error) {
-    console.error("getBranches:", error.message);
+    console.error("getBranchesWithId:", error.message);
     return [];
   }
-  return (data || []).map((b) => b.name);
+  return data || [];
 }
 
 export async function addBranch(name) {
