@@ -6,7 +6,11 @@
     },
     {
       "path": "/api/cron/meeting-reminders",
+<<<<<<< HEAD
       "schedule": "*0 1 * * * *"
+=======
+      "schedule": "0 1 * * *"
+>>>>>>> 7f1c6ab10475d8cc3ff48acbeb7c94325bb34dd2
     },
     {
       "path": "/api/cron/process-resignations",
