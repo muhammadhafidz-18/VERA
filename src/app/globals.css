@@ -49,7 +49,7 @@ button{font-family:inherit}
   width:220px;height:100vh;
   background-image:
     linear-gradient(180deg,rgba(18,63,112,.45) 0%,rgba(18,63,112,.8) 22%,rgba(29,95,160,.8) 78%,rgba(34,172,199,.4) 100%),
-    url('/sidebar-bg.jpg');
+    url('/sidebar-bg.png');
   background-size:cover;
   background-position:center;
   background-repeat:no-repeat;
