@@ -14,6 +14,46 @@ export const VERA_TOOLS = [
     },
   },
   {
+    name: "get_employees",
+    description: "Search or list employees from the company's Employee Directory. Use this whenever the user asks about who works where, employee details, headcount, or lists of employees. By default this only returns active employees — pass status when the user is specifically asking about resigned/inactive employees or wants everyone regardless of status.",
+    input_schema: {
+      type: "object",
+      properties: {
+        search: { type: "string", description: "Optional keyword to match against employee name, ID, or email" },
+        division: { type: "string", description: "Optional division name to filter by" },
+        branch: { type: "string", description: "Optional branch/city to filter by" },
+        status: {
+          type: "string",
+          enum: ["active", "inactive", "all"],
+          description: "Filter by employment status. Omit (defaults to 'active') for normal headcount/lookup questions. Use 'inactive' when the user asks about resigned/inactive employees specifically, e.g. 'siapa yang sudah resign', 'who resigned this month'. Use 'all' when they want everyone regardless of status.",
+        },
+      },
+    },
+  },
+  {
+    name: "resign_employee",
+    description: "Mark an employee as resigned, effective a given date. If the date is today or in the past, this takes effect immediately (status becomes inactive right away). If the date is in the future, it's scheduled — the employee stays active until that date, then a daily background job flips them to inactive automatically. Requires the employee's ID (use get_employees first if you only have a name). Always confirm the employee's name and the resign date with the user before calling this.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Employee ID to resign, e.g. EMP-0003" },
+        resignDate: { type: "string", description: "Format YYYY-MM-DD. If the user doesn't specify a date, use today's date." },
+      },
+      required: ["id", "resignDate"],
+    },
+  },
+  {
+    name: "reactivate_employee",
+    description: "Cancel a scheduled resignation, or bring back an employee who has already resigned — either way, sets their status back to active and clears the resign date. Requires the employee's ID (use get_employees with status 'inactive' or 'all' first if you only have a name). Confirm with the user before calling this.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Employee ID to reactivate, e.g. EMP-0003" },
+      },
+      required: ["id"],
+    },
+  },
+  {
     name: "create_employee",
     description: "Create a new employee record in the Employee Directory. Only call this after confirming name, email, division, and branch with the user — ask for any missing details first rather than guessing.",
     input_schema: {
@@ -48,7 +88,8 @@ export const VERA_TOOLS = [
       properties: {
         title: { type: "string" },
         date: { type: "string", description: "Format YYYY-MM-DD" },
-        time: { type: "string", description: "24-hour format HH:MM" },
+        startTime: { type: "string", description: "24-hour format HH:MM" },
+        endTime: { type: "string", description: "24-hour format HH:MM" },
         location: { type: "string" },
         description: { type: "string" },
         attendeeNames: { type: "array", items: { type: "string" }, description: "Names of employees to invite" },
@@ -57,18 +98,20 @@ export const VERA_TOOLS = [
     },
   },
   {
-    name: "create_task",
-    description: "Create and assign a new task/request to an employee. Required: title, assignedTo. If the user only gave a name, use get_employees first to resolve the correct employee ID.",
+    name: "create_meeting",
+    description: "Create a new meeting in the Meeting Schedule. Required: title, date, time. If the user hasn't given date/time/who it's with/what it's about, ask for the missing pieces first. Before creating, it's good practice to call get_meetings for the same date to check for a scheduling conflict.",
     input_schema: {
       type: "object",
       properties: {
         title: { type: "string" },
+        date: { type: "string", description: "Format YYYY-MM-DD" },
+        startTime: { type: "string", description: "24-hour format HH:MM" },
+        endTime: { type: "string", description: "24-hour format HH:MM" },
+        location: { type: "string" },
         description: { type: "string" },
-        assignedTo: { type: "string", description: "Employee ID to assign the task to, e.g. EMP-0003" },
-        priority: { type: "string", enum: ["low", "medium", "high"] },
-        dueDate: { type: "string", description: "Format YYYY-MM-DD" },
+        attendeeNames: { type: "array", items: { type: "string" }, description: "Names of employees to invite" },
       },
-      required: ["title", "assignedTo"],
+      required: ["title", "date", "startTime", "endTime"],
     },
   },
   {
@@ -99,6 +142,29 @@ export const VERA_TOOLS = [
       required: ["id"],
     },
   },
+
+  {
+    name: "update_meeting",
+    description: "Update fields on an existing meeting (title, date, start/end time, location, description). Requires the meeting ID (use get_meetings first if you only have a description of it). Only include the fields that should change. If the new time conflicts with another meeting, the tool will refuse and return needs_confirmation instead of saving — explain the conflict to the user (which meeting, what time) and only call this again with confirmed: true if the user explicitly says to proceed anyway. Never assume yes.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Meeting ID to update, e.g. MTG-05" },
+        title: { type: "string" },
+        date: { type: "string", description: "Format YYYY-MM-DD" },
+        startTime: { type: "string", description: "24-hour format HH:MM" },
+        endTime: { type: "string", description: "24-hour format HH:MM" },
+        location: { type: "string" },
+        description: { type: "string" },
+        confirmed: {
+          type: "boolean",
+          description: "Only set true after the user has explicitly confirmed they want to proceed despite a schedule conflict.",
+        },
+      },
+      required: ["id"],
+    },
+  },
+
   {
     name: "get_tasks",
     description: "List tasks. Use this to answer questions about task status, who a task is assigned to, or how many tasks exist. Optionally resolve a person's tasks by first calling get_employees to find their ID, then filter results yourself by assignedTo/createdBy in your reply.",
@@ -121,6 +187,7 @@ export const VERA_TOOLS = [
       required: ["id"],
     },
   },
+
   {
     name: "get_divisions",
     description: "List all divisions in the company's Settings. Use this to check whether a division already exists before adding one, or to answer questions about what divisions exist.",
@@ -181,3 +248,4 @@ export const VERA_TOOLS = [
     input_schema: { type: "object", properties: {} },
   },
 ];
+

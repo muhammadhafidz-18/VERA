@@ -1,14 +1,16 @@
 // src/app/api/vera/chat/route.js
 import { NextResponse } from "next/server";
+import * as XLSX from "xlsx";
 import { VERA_TOOLS } from "@/lib/vera/tools";
 import { buildVeraSystemPrompt } from "@/lib/vera/systemPrompt";
 import { executeVeraTool } from "@/lib/vera/executeTool";
-import { getDivisions, getBranches } from "@/lib/supabase/directory";
+import { getDivisions, getBranches, bulkImportEmployees, bulkImportMasterList } from "@/lib/supabase/directory";
 import { getIntegrationConfig } from "@/lib/supabase/integrations";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-4-6";
-const MAX_TURNS = 5;
+const MAX_TURNS = 8;
+const MAX_IMPORT_ROWS = 500;
 
 const VERA_TOOL_OPERATION_TYPE = {
   create_employee: "INSERT",
@@ -20,6 +22,9 @@ const VERA_TOOL_OPERATION_TYPE = {
   update_task: "UPDATE",
   update_division: "UPDATE",
   update_branch: "UPDATE",
+  update_meeting: "UPDATE",
+  resign_employee: "UPDATE",
+  reactivate_employee: "UPDATE",
   get_employees: "READ",
   get_meetings: "READ",
   get_tasks: "READ",
@@ -43,6 +48,139 @@ const VERA_SUCCESS_CLAIM_PATTERN =
   /(berhasil (ditambahkan|dibuat|dijadwalkan|di ?tambahkan|di ?assign)|telah (ditambahkan|dibuat|dijadwalkan|di ?assign)|sudah (ditambahkan|dibuat|dijadwalkan|di ?assign|diassign)|successfully (added|created|scheduled|assigned)|has been (added|created|scheduled|assigned)|karyawan baru .{0,40} (berhasil|sudah|telah)|meeting .{0,40} (sudah|telah) (dibuat|dijadwalkan)|task .{0,40} (sudah|telah) (dibuat|di ?assign))/i;
 const VERA_RAW_DATA_PATTERN =
   /[\[{]\s*["{]|"[a-zA-Z_]+"\s*:\s*["\[{0-9]|\b(get_employees|create_employee)\s*\(|```|^\s*(javascript|json|python)\s*$/im;
+
+const EMPLOYEE_HEADER_MAP = {
+  "employee id": "id",
+  "name": "name",
+  "email": "email",
+  "role": "role",
+  "division": "division",
+  "branch": "branch",
+  "join date": "joinDate",
+  "birth date": "birthDate",
+  "phone": "phone",
+  "identity number": "identityNumber",
+  "address": "address",
+};
+
+const MASTER_LIST_HEADER_MAP = {
+  "id": "id",
+  "division name": "name",
+  "branch name": "name",
+  "name": "name",
+};
+
+// Asks Claude to phrase the (already-finished, already-in-database) import
+// result in natural language. Claude is only given the exact result JSON
+// and explicitly told not to invent numbers — this call has no tools
+// attached, so there's no risk of it trying to "call" anything instead
+// of just answering.
+async function summarizeImportResultWithClaude(result, label) {
+  const prompt = `Proses import ${label} berikut ini SUDAH selesai dan SUDAH benar-benar terjadi di database (bukan rencana, bukan simulasi). Jelaskan hasilnya ke user dalam 1-3 kalimat bahasa Indonesia yang natural, ramah, dan ringkas — gaya bicara asisten kantor yang santai tapi jelas.
+
+Aturan:
+- Sebutkan jumlah yang berhasil dibuat/diperbarui dan yang gagal, berdasarkan angka di data berikut.
+- Kalau ada yang gagal, sebutkan maksimal 2-3 contoh baris yang gagal beserta alasan singkatnya.
+- JANGAN mengarang angka, nama, atau detail apa pun yang tidak ada di data ini.
+- JANGAN menyebut kata "JSON" atau "data mentah" ke user — cukup jelaskan hasilnya secara natural.
+
+Data hasil import:
+${JSON.stringify(result)}`;
+
+  try {
+    const res = await fetch(ANTHROPIC_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 300,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error?.message || "Anthropic API error");
+    const text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+    if (text) return text;
+  } catch (err) {
+    console.error("[VERA] summarizeImportResultWithClaude error:", err);
+  }
+
+  return `Import ${label} selesai: ${result.created} berhasil dibuat${
+    result.updated !== undefined ? `, ${result.updated} diperbarui` : ""
+  }, ${result.failed} gagal dari ${result.total} baris.`;
+}
+
+// Parses a spreadsheet attachment sent through VERA chat and runs the
+// matching bulk import — done here directly rather than via Claude, since
+// Claude can't parse binary xlsx itself and we don't want it "narrating"
+// a fake success. The result is then handed to Claude just to phrase the
+// summary naturally (see summarizeImportResultWithClaude above).
+async function handleSpreadsheetImport(attachment, lastUserText) {
+  const text = (lastUserText || "").toLowerCase();
+  let target = null;
+  if (/\bbranch(es)?\b|\bcabang\b/i.test(text)) target = "branches";
+  else if (/\bdivisi(on)?s?\b/i.test(text)) target = "divisions";
+  else if (/\bkaryawan|employee|pegawai\b/i.test(text)) target = "employees";
+
+  if (!target) {
+    return "File-nya sudah saya terima, tapi saya belum yakin ini mau diimport ke mana — Employee, Division, atau Branch? Sebutkan salah satu, ya, terus kirim ulang filenya.";
+  }
+
+  let workbook;
+  try {
+    const buffer = Buffer.from(attachment.data, "base64");
+    workbook = XLSX.read(buffer, { type: "buffer", cellFormula: false, bookVBA: false, cellHTML: false });
+  } catch {
+    return "Maaf, filenya gagal dibaca. Pastikan formatnya .xlsx, .xls, atau .csv yang valid, ya.";
+  }
+
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) return "File-nya kosong, nggak ada sheet-nya.";
+
+  const rawRows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: "", blankrows: false });
+  if (rawRows.length < 2) return "File-nya nggak ada baris datanya.";
+
+  const headerRow = rawRows[0].map((h) => String(h || "").trim().toLowerCase());
+
+  if (target === "employees") {
+    const fieldByCol = headerRow.map((h) => EMPLOYEE_HEADER_MAP[h] || null);
+    if (!fieldByCol.includes("name") || !fieldByCol.includes("email")) {
+      return "File-nya harus punya kolom Name dan Email buat import Employee. Coba pakai file hasil Export Employee sebagai template, ya.";
+    }
+    const rows = rawRows.slice(1, 1 + MAX_IMPORT_ROWS).map((row) => {
+      const obj = {};
+      fieldByCol.forEach((field, i) => {
+        if (!field) return;
+        const v = row[i];
+        obj[field] = v === undefined || v === null ? "" : String(v).trim();
+      });
+      return obj;
+    });
+    const result = await bulkImportEmployees(rows);
+    return summarizeImportResultWithClaude(result, "Employee");
+  }
+
+  const fieldByCol = headerRow.map((h) => MASTER_LIST_HEADER_MAP[h] || null);
+  const label = target === "branches" ? "Branch" : "Division";
+  if (!fieldByCol.includes("name")) {
+    return `File-nya harus punya kolom Name buat import ${label}. Coba pakai file hasil Export ${label} sebagai template, ya.`;
+  }
+  const rows = rawRows.slice(1, 1 + MAX_IMPORT_ROWS).map((row) => {
+    const obj = { id: "", name: "" };
+    fieldByCol.forEach((field, i) => {
+      if (!field) return;
+      const v = row[i];
+      obj[field] = v === undefined || v === null ? "" : String(v).trim();
+    });
+    return obj;
+  });
+  const result = await bulkImportMasterList(target, rows);
+  return summarizeImportResultWithClaude(result, label);
+}
 
 async function callAnthropic(messages, systemPrompt, toolChoice) {
   const body = { model: MODEL, max_tokens: 1024, system: systemPrompt, tools: VERA_TOOLS, messages };
@@ -80,13 +218,39 @@ export async function POST(request) {
       return NextResponse.json({ error: "Missing conversation history." }, { status: 400 });
     }
 
+    const lastUserMsg = [...history].reverse().find((m) => m.role === "user");
+
+    // Spreadsheet attachments are handled entirely server-side — bypass
+    // the Claude tool-calling loop below completely for this turn.
+    if (attachment?.kind === "spreadsheet" && attachment?.data) {
+      const text = await handleSpreadsheetImport(attachment, lastUserMsg?.content);
+      return NextResponse.json({ text, logoutRequested: false, resetRequested: false, dbOperationType: null });
+    }
+
     const divisions = await getDivisions();
     const branches = await getBranches();
     const chatbaseConfig = await getIntegrationConfig("chatbase");
     const productKnowledgeEnabled = !!(chatbaseConfig?.enabled && chatbaseConfig?.apiKey && chatbaseConfig?.chatbotId);
-    const systemPrompt = buildVeraSystemPrompt(divisions, branches, productKnowledgeEnabled);
 
-    const lastUserMsg = [...history].reverse().find((m) => m.role === "user");
+    const now = new Date();
+    const jakartaFmt = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Jakarta",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }); // en-CA gives YYYY-MM-DD directly
+    const iso = jakartaFmt.format(now); // e.g. "2026-07-21"
+    const dayName = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jakarta", weekday: "long" }).format(now);
+    const humanId = new Intl.DateTimeFormat("id-ID", {
+      timeZone: "Asia/Jakarta",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(now);
+    const today = { iso, dayName, humanId };
+
+    const systemPrompt = buildVeraSystemPrompt(divisions, branches, productKnowledgeEnabled, today);
+
     const lastUserWasConfirmation =
       lastUserMsg &&
       typeof lastUserMsg.content === "string" &&
@@ -99,9 +263,10 @@ export async function POST(request) {
 
     let messages = history;
 
-    // If a file was attached to this turn, splice it into the last user
-    // message as a document/image content block (Claude reads it directly —
-    // no OCR/extraction step needed for PDFs or images).
+    // If a file was attached to this turn (PDF/image — spreadsheets already
+    // returned above), splice it into the last user message as a
+    // document/image content block. Claude reads it directly — no OCR/
+    // extraction step needed for PDFs or images.
     if (attachment?.data && messages.length) {
       const lastIdx = messages.length - 1;
       const last = messages[lastIdx];
@@ -116,6 +281,7 @@ export async function POST(request) {
         ];
       }
     }
+
     let forceToolChoice = false;
     let logoutRequested = false;
     let resetRequested = false;
@@ -132,12 +298,29 @@ export async function POST(request) {
 
       if (toolUses.length === 0) {
         const text = content.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+
+        // A real create/update already succeeded earlier in this turn-chain —
+        // trust this wrap-up text as the final answer instead of running it
+        // through the dodge/stall heuristics below. Those heuristics exist to
+        // catch Claude avoiding work before anything real has happened; once
+        // the actual database change is done, second-guessing the follow-up
+        // text just causes false failures on genuinely successful requests.
+        if (dbOperationType) {
+          return NextResponse.json({
+            text: text || "Selesai.",
+            logoutRequested,
+            resetRequested,
+            dbOperationType,
+            downloadUrl,
+          });
+        }
+
         const looksLikePlaceholder = VERA_PLACEHOLDER_PATTERN.test(text);
         const looksLikeRawData = VERA_RAW_DATA_PATTERN.test(text);
         const looksLikeMeta = VERA_META_PATTERN.test(text);
         const looksLikeFalseSuccess = VERA_SUCCESS_CLAIM_PATTERN.test(text);
         const looksLikeDodgedConfirmation = lastUserWasConfirmation && !logoutRequested && !resetRequested;
-        const looksLikeUnverifiedSubmission = lastUserLooksLikeDataSubmission && !dbOperationType;
+        const looksLikeUnverifiedSubmission = lastUserLooksLikeDataSubmission;
         const isBad =
           looksLikePlaceholder ||
           looksLikeRawData ||
@@ -150,7 +333,7 @@ export async function POST(request) {
           const nudge = looksLikeUnverifiedSubmission
             ? "The user just gave you structured details (name/email/division/branch) to create a record, but no create tool has actually succeeded yet. Call the appropriate create tool right now with those exact details."
             : looksLikeDodgedConfirmation
-            ? "The user just confirmed an action you asked about. Don't reply with a generic acknowledgment — call the corresponding tool right now (e.g. reset_conversation or logout) to actually carry it out."
+            ? "The user just confirmed the action you asked about in your previous message. Don't reply with a generic acknowledgment — call the specific tool that matches what THAT confirmation was about (for example, if you asked to confirm a meeting update, call update_meeting; if it was about logging out, call logout) right now to actually carry it out."
             : looksLikeFalseSuccess
             ? "You just claimed something was added/created/scheduled, but you did NOT actually call the tool to do it. Call the correct tool for real right now."
             : looksLikeRawData
@@ -182,8 +365,11 @@ export async function POST(request) {
       }
 
       const toolResults = [];
+      let meetingWriteResult = null;
+      let meetingWriteVerb = null;
       for (const tu of toolUses) {
         const result = await executeVeraTool(tu.name, tu.input || {}, { chatbaseConfig });
+        console.log(`[VERA DEBUG] ${tu.name}`, JSON.stringify(tu.input), "=>", JSON.stringify(result));
         if (tu.name === "logout" && result.success) logoutRequested = true;
         if (tu.name === "reset_conversation" && result.success) resetRequested = true;
         if (result.success) {
@@ -191,17 +377,43 @@ export async function POST(request) {
           if (opType === "INSERT" || opType === "UPDATE") dbOperationType = opType;
           if (result.downloadUrl) downloadUrl = result.downloadUrl;
         }
+        if ((tu.name === "create_meeting" || tu.name === "update_meeting") && result.success && result.meeting) {
+          meetingWriteResult = result;
+          meetingWriteVerb = tu.name === "create_meeting" ? "dibuat" : "diupdate";
+        }
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: JSON.stringify(result) });
+      }
+
+      // Deterministic short-circuit: once a meeting create/update tool has
+      // actually succeeded, reply immediately using the tool's own data
+      // instead of asking the model for one more turn. This sidesteps
+      // models that keep re-verifying with get_meetings out of caution and
+      // burn through the turn budget before ever replying. Note: this does
+      // NOT fire when update_meeting returns needs_confirmation (success is
+      // false in that case), so the confirmation flow falls through to the
+      // normal loop below and Claude explains the conflict + asks the user.
+      if (meetingWriteResult) {
+        const m = meetingWriteResult.meeting;
+        const attendeeCount = m.attendeeIds?.length || 0;
+        const attendeeText = attendeeCount > 0 ? ` Total peserta sekarang: ${attendeeCount} orang.` : "";
+        const conflictText = meetingWriteResult.schedule_conflict
+          ? " Catatan: ada bentrok jadwal dengan meeting lain di waktu yang sama."
+          : "";
+        const text = `Meeting "${m.title}" berhasil ${meetingWriteVerb} untuk ${m.date}, pukul ${m.startTime}–${m.endTime}${m.location ? ` di ${m.location}` : ""}.${attendeeText}${conflictText}`;
+        return NextResponse.json({ text, logoutRequested, resetRequested, dbOperationType });
       }
 
       messages = [...messages, { role: "assistant", content }, { role: "user", content: toolResults }];
     }
 
     return NextResponse.json({
-      text: "Maaf, permintaan ini butuh beberapa langkah dan belum selesai. Coba pertanyaan yang lebih spesifik.",
+      text: dbOperationType
+        ? "Perubahannya sudah tersimpan, tapi saya kehabisan giliran untuk merangkum hasilnya. Coba cek langsung di halaman terkait, atau tanya lagi untuk konfirmasi."
+        : "Maaf, permintaan ini butuh beberapa langkah dan belum selesai. Coba pertanyaan yang lebih spesifik.",
       logoutRequested,
       resetRequested,
       dbOperationType,
+      downloadUrl,
     });
   } catch (err) {
     console.error("[VERA] chat route error:", err);

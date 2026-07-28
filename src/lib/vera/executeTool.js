@@ -1,10 +1,12 @@
 // src/lib/vera/executeTool.js
-import { getMeetings, createMeeting } from "@/lib/supabase/meetings";
+import { getMeetings, createMeeting, updateMeeting } from "@/lib/supabase/meetings";
 import { getTasks, createTask, updateTask, changeTaskStatus } from "@/lib/supabase/tasks";
 import {
   getEmployees,
   createEmployee,
   updateEmployee,
+  resignEmployee,
+  reactivateEmployee,
   addDivision,
   addBranch,
   getDivisions,
@@ -15,12 +17,13 @@ import {
 import { callChatbase } from "@/lib/chatbase";
 
 export async function executeVeraTool(name, input, context = {}) {
-  if (name === "get_employees") {
+   if (name === "get_employees") {
     const results = await getEmployees(input);
     return {
       total_matches: results.length,
       results: results.slice(0, 25).map((e) => ({
         id: e.id, name: e.name, email: e.email, division: e.division, branch: e.branch, role: e.role,
+        status: e.status, resignDate: e.resignDate || null,
       })),
     };
   }
@@ -32,20 +35,19 @@ export async function executeVeraTool(name, input, context = {}) {
     return await createEmployee(input);
   }
 
-  if (name === "get_meetings") {
-    const results = await getMeetings(input);
-    return {
-      total_matches: results.length,
-      results: results.slice(0, 25).map((m) => ({ id: m.id, title: m.title, date: m.date, time: m.time, location: m.location })),
-    };
-  }
-
   if (name === "create_meeting") {
-    if (!input.title || !input.date || !input.time) {
-      return { success: false, error: "Missing required fields (title, date, time)." };
+    if (!input.title || !input.date || !input.startTime || !input.endTime) {
+      return { success: false, error: "Missing required fields (title, date, startTime, endTime)." };
     }
     return await createMeeting(input);
   }
+
+  if (name === "update_meeting") {
+    if (!input.id) return { success: false, error: "Meeting ID is required." };
+    const { id, ...patch } = input;
+    return await updateMeeting(id, patch);
+  }
+
 
   if (name === "create_task") {
     if (!input.title || !input.assignedTo) {
@@ -58,6 +60,21 @@ export async function executeVeraTool(name, input, context = {}) {
     if (!input.id) return { success: false, error: "Employee ID is required." };
     const { id, ...patch } = input;
     return await updateEmployee(id, patch);
+  }
+
+  if (name === "resign_employee") {
+    if (!input.id) return { success: false, error: "Employee ID is required." };
+    const result = await resignEmployee(input.id, input.resignDate);
+    if (!result.success) return result;
+    return {
+      ...result,
+      scheduled: result.employee.status === "active", // status stayed active -> it was scheduled, not immediate
+    };
+  }
+
+  if (name === "reactivate_employee") {
+    if (!input.id) return { success: false, error: "Employee ID is required." };
+    return await reactivateEmployee(input.id);
   }
 
   if (name === "get_tasks") {

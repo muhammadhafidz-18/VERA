@@ -1,5 +1,6 @@
 // src/lib/supabase/meetings.js
 import { createClient } from "./server";
+import { createAdminClient } from "./admin";
 import { getCurrentEmployee } from "./currentUser";
 import { notifyMeetingParticipants } from "./notifications";
 
@@ -38,6 +39,7 @@ async function resolveEmployeeUuids(supabase, employeeCodes) {
   return (data || []).map((e) => e.id);
 }
 
+// ---------- Reads ----------
 export async function getMeetings({ date, search } = {}) {
   const supabase = await createClient();
   const current = await getCurrentEmployee();
@@ -58,6 +60,7 @@ export async function getMeetings({ date, search } = {}) {
     .filter((m) => m.createdBy === current.id || m.attendeeIds.includes(current.id));
 }
 
+// ---------- Writes ----------
 export async function createMeeting(input) {
   const supabase = await createClient();
 
@@ -128,13 +131,14 @@ export async function createMeeting(input) {
   };
 }
 
-export async function updateMeeting(id, patch) {
+export async function updateMeeting(id, patch, options = {}) {
+  const { requireConfirmation = false, confirmed = false } = options;
   const supabase = await createClient();
   const current = await getCurrentEmployee();
 
   const { data: meetingRow, error: findError } = await supabase
     .from("meetings")
-    .select("id, created_by")
+    .select("id, created_by, date, start_time, end_time")
     .eq("meeting_code", id)
     .maybeSingle();
 
@@ -146,6 +150,40 @@ export async function updateMeeting(id, patch) {
   // can edit.
   if (meetingRow.created_by && current && meetingRow.created_by !== current.uuid) {
     return { success: false, error: "Only the meeting creator can edit this meeting.", forbidden: true };
+  }
+
+  // Check for schedule conflicts using the EFFECTIVE date/time — whatever
+  // the patch changes, falling back to the meeting's current values for
+  // anything not being changed. Mirrors the same overlap check createMeeting
+  // does, excluding this meeting itself from the comparison.
+  const effectiveDate = patch.date !== undefined ? patch.date : meetingRow.date;
+  const effectiveStart = patch.startTime !== undefined ? patch.startTime : meetingRow.start_time;
+  const effectiveEnd = patch.endTime !== undefined ? patch.endTime : meetingRow.end_time;
+
+  const { data: sameDay } = await supabase
+    .from("meetings")
+    .select("title, start_time, end_time, location")
+    .eq("date", effectiveDate)
+    .neq("id", meetingRow.id);
+
+  const conflicts = (sameDay || []).filter(
+    (m) => effectiveStart < m.end_time && effectiveEnd > m.start_time
+  );
+
+  // Only VERA's chat tool sets requireConfirmation — the UI form always
+  // saves immediately and shows the conflict warning afterward instead.
+  if (requireConfirmation && conflicts.length > 0 && !confirmed) {
+    return {
+      success: false,
+      needs_confirmation: true,
+      conflicting_meetings: conflicts.map((m) => ({
+        title: m.title,
+        startTime: (m.start_time || "").slice(0, 5),
+        endTime: (m.end_time || "").slice(0, 5),
+        location: m.location,
+      })),
+      error: "This new time conflicts with existing meetings. Ask the user to confirm before proceeding.",
+    };
   }
 
   const update = {};
@@ -199,7 +237,17 @@ export async function updateMeeting(id, patch) {
     current?.uuid
   );
 
-  return { success: true, meeting: mapMeetingRow(full) };
+  return {
+    success: true,
+    meeting: mapMeetingRow(full),
+    schedule_conflict: conflicts.length > 0,
+    conflicting_meetings: conflicts.map((m) => ({
+      title: m.title,
+      startTime: (m.start_time || "").slice(0, 5),
+      endTime: (m.end_time || "").slice(0, 5),
+      location: m.location,
+    })),
+  };
 }
 
 export async function deleteMeeting(id) {
@@ -229,4 +277,71 @@ export async function deleteMeeting(id) {
   const { error } = await supabase.from("meetings").delete().eq("id", meetingRow.id);
   if (error) return { success: false, error: error.message };
   return { success: true };
+}
+
+// ---------- Upcoming meeting reminders (called by the cron route) ----------
+// meetings.date/start_time are stored as plain date/time (no timezone) —
+// they represent Asia/Jakarta wall-clock time. We convert to a real UTC
+// timestamp here so it can be compared against Date.now().
+const JAKARTA_OFFSET_MS = 7 * 60 * 60 * 1000; // UTC+7, Indonesia has no DST
+
+function meetingStartToUtcMs(dateStr, timeStr) {
+  const [h, m] = timeStr.slice(0, 5).split(":").map(Number);
+  const [y, mo, d] = dateStr.split("-").map(Number);
+  return Date.UTC(y, mo - 1, d, h, m) - JAKARTA_OFFSET_MS;
+}
+
+export async function notifyUpcomingMeetings() {
+  const admin = createAdminClient();
+  const now = Date.now();
+  const windowEnd = now + 15 * 60 * 1000; // 15-minute lookahead
+
+  const todayStr = new Date(now).toISOString().slice(0, 10);
+  const tomorrowStr = new Date(now + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  const { data: candidates, error } = await admin
+    .from("meetings")
+    .select("id, meeting_code, title, date, start_time, location, created_by, reminder_sent_at, meeting_attendees ( employee_id )")
+    .in("date", [todayStr, tomorrowStr])
+    .is("reminder_sent_at", null);
+
+  if (error) {
+    console.error("notifyUpcomingMeetings:", error.message);
+    return { success: false, error: error.message, notified: 0 };
+  }
+  if (!candidates || candidates.length === 0) {
+    return { success: true, notified: 0 };
+  }
+
+  let notifiedCount = 0;
+  for (const meeting of candidates) {
+    const startMs = meetingStartToUtcMs(meeting.date, meeting.start_time);
+    // Skip meetings not yet inside the 15-minute window, and meetings
+    // that already started (missed window — don't send a late reminder).
+    if (startMs < now || startMs > windowEnd) continue;
+
+    const recipients = [
+      ...new Set([meeting.created_by, ...(meeting.meeting_attendees || []).map((a) => a.employee_id)].filter(Boolean)),
+    ];
+
+    const minutesLeft = Math.max(1, Math.round((startMs - now) / 60000));
+    const message = `Meeting "${meeting.title}" (${meeting.meeting_code}) starts in ${minutesLeft} minute${
+      minutesLeft === 1 ? "" : "s"
+    }${meeting.location ? ` at ${meeting.location}` : ""}.`;
+
+    if (recipients.length) {
+      const { error: insertError } = await admin
+        .from("notifications")
+        .insert(recipients.map((recipient_id) => ({ meeting_id: meeting.id, recipient_id, message })));
+      if (insertError) {
+        console.error(`notifyUpcomingMeetings (${meeting.meeting_code}):`, insertError.message);
+        continue;
+      }
+    }
+
+    await admin.from("meetings").update({ reminder_sent_at: new Date().toISOString() }).eq("id", meeting.id);
+    notifiedCount++;
+  }
+
+  return { success: true, notified: notifiedCount };
 }

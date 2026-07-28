@@ -1,6 +1,6 @@
 // src/components/vera/VeraChat.jsx
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
 import Icon from "@/lib/Icon";
 import { speak, warmUpVoices } from "@/lib/voice";
 import { clearSession, loadSession } from "@/lib/session";
@@ -18,7 +18,10 @@ import {
   COMMAND_SUGGESTIONS,
 } from "@/lib/vera/chatHelpers";
 
-export default function VeraChat({ onLogout }) {
+const MAX_ATTACHMENT_MB = 5;
+const SPREADSHEET_EXTENSIONS = [".xlsx", ".xls", ".csv"];
+
+const VeraChat = forwardRef(function VeraChat({ onLogout, compact = false, hideHeader = false }, ref) {
   const greeting = getVeraGreeting(loadSession()?.user?.name);
   const [messages, setMessages] = useState(() => loadVeraChatHistory() || [{ role: "assistant", text: greeting }]);
   const [input, setInput] = useState("");
@@ -29,6 +32,7 @@ export default function VeraChat({ onLogout }) {
   const [thinking, setThinking] = useState(false);
   const scrollRef = useRef(null);
   const recognitionRef = useRef(null);
+  const transcriptPartsRef = useRef([]);
 
   useEffect(() => {
     warmUpVoices();
@@ -63,6 +67,10 @@ export default function VeraChat({ onLogout }) {
     speak(greeting);
   };
 
+  useImperativeHandle(ref, () => ({
+    resetChat: handleResetChat,
+  }));
+
   const resetChatSilently = () => {
     const fresh = [{ role: "assistant", text: greeting }];
     setMessages(fresh);
@@ -77,8 +85,6 @@ export default function VeraChat({ onLogout }) {
     if (onLogout) onLogout();
   };
 
-  const MAX_ATTACHMENT_MB = 5;
-
   const handleFileSelect = (e) => {
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-selecting the same file later
@@ -87,8 +93,10 @@ export default function VeraChat({ onLogout }) {
 
     const isPdf = file.type === "application/pdf";
     const isImage = file.type.startsWith("image/");
-    if (!isPdf && !isImage) {
-      setAttachError("Cuma bisa attach PDF atau gambar (PNG/JPG).");
+    const isSpreadsheet = SPREADSHEET_EXTENSIONS.some((ext) => file.name.toLowerCase().endsWith(ext));
+
+    if (!isPdf && !isImage && !isSpreadsheet) {
+      setAttachError("Cuma bisa attach PDF, gambar (PNG/JPG), atau Excel/CSV (.xlsx, .xls, .csv).");
       return;
     }
     if (file.size > MAX_ATTACHMENT_MB * 1024 * 1024) {
@@ -96,10 +104,12 @@ export default function VeraChat({ onLogout }) {
       return;
     }
 
+    const kind = isPdf ? "document" : isImage ? "image" : "spreadsheet";
+
     const reader = new FileReader();
     reader.onload = () => {
       const base64 = String(reader.result).split(",")[1] || "";
-      setAttachedFile({ name: file.name, mediaType: file.type, kind: isPdf ? "document" : "image", data: base64 });
+      setAttachedFile({ name: file.name, mediaType: file.type, kind, data: base64 });
     };
     reader.onerror = () => setAttachError("Gagal membaca file. Coba lagi.");
     reader.readAsDataURL(file);
@@ -115,7 +125,7 @@ export default function VeraChat({ onLogout }) {
     const effectiveText = text?.trim() || (hasAttachment ? "Tolong ringkas isi dokumen ini." : "");
     if (!effectiveText || thinking) return;
 
-    // Deterministic shortcut: if VERA just asked to confirm logout/reset
+    // Deterministic shortcut: if V.E.R.A just asked to confirm logout/reset
     // and this message is a bare "yes", act on it directly — no AI round-trip.
     const lastMsg = messages[messages.length - 1];
     const isAffirmative = VERA_AFFIRMATIVE_PATTERN.test(effectiveText);
@@ -180,7 +190,7 @@ export default function VeraChat({ onLogout }) {
     } catch (err) {
       const fallback = err?.message
         ? `Maaf, terjadi kendala: ${err.message}`
-        : "Maaf, terjadi kendala koneksi ke VERA. Coba lagi sebentar.";
+        : "Maaf, terjadi kendala koneksi ke V.E.R.A. Coba lagi sebentar.";
       setMessages((m) => [...m, { role: "assistant", text: fallback }]);
       if (viaVoice) speak(fallback);
     } finally {
@@ -202,10 +212,18 @@ export default function VeraChat({ onLogout }) {
     }
     const recognition = new SpeechRecognitionAPI();
     recognition.lang = "id-ID";
+    recognition.continuous = true;
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
-    recognition.onstart = () => setRecording(true);
-    recognition.onend = () => setRecording(false);
+    recognition.onstart = () => {
+      transcriptPartsRef.current = [];
+      setRecording(true);
+    };
+    recognition.onend = () => {
+      setRecording(false);
+      const fullTranscript = transcriptPartsRef.current.join(" ").trim();
+      if (fullTranscript) sendText(fullTranscript, true);
+    };
     recognition.onerror = (e) => {
       setRecording(false);
       let msg = "Gagal merekam suara. Coba lagi, atau ketik pertanyaan kamu.";
@@ -217,8 +235,11 @@ export default function VeraChat({ onLogout }) {
       setMessages((m) => [...m, { role: "assistant", text: msg }]);
     };
     recognition.onresult = (e) => {
-      const transcript = e.results?.[0]?.[0]?.transcript;
-      if (transcript) sendText(transcript, true);
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          transcriptPartsRef.current.push(e.results[i][0].transcript);
+        }
+      }
     };
     recognitionRef.current = recognition;
     try {
@@ -232,22 +253,34 @@ export default function VeraChat({ onLogout }) {
   const isEmpty = messages.length <= 1;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 105px)", maxWidth: 720, width: "100%", margin: "0 auto" }}>
-      <div className="vera-hero">
-        <div className="vera-hero-icon-badge">
-          <Icon name="message-chatbot" size={17} style={{ color: "#fff" }} />
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: compact ? "100%" : "calc(100vh - 105px)",
+        maxWidth: compact ? "none" : 720,
+        width: "100%",
+        margin: compact ? 0 : "0 auto",
+        minHeight: 0,
+      }}
+    >
+      {!hideHeader && (
+        <div className="vera-hero">
+          <div className="vera-hero-icon-badge">
+            <Icon name="message-chatbot" size={17} style={{ color: "#fff" }} />
+          </div>
+          <div className="vera-hero-text">
+            <div className="vera-hero-title">Ask V.E.R.A</div>
+            <div className="vera-hero-sub">Type or talk directly — one door for all your operational needs.</div>
+          </div>
+          <button className="vera-replay-btn" onClick={handleResetChat} title="Hapus riwayat chat dan mulai dari awal">
+            <Icon name="refresh" size={12} /> Reset
+          </button>
+          <span className="vera-live-badge">
+            <span className="vera-live-dot" /> AI Active
+          </span>
         </div>
-        <div className="vera-hero-text">
-          <div className="vera-hero-title">Ask VERA</div>
-          <div className="vera-hero-sub">Type or talk directly — one door for all your operational needs.</div>
-        </div>
-        <button className="vera-replay-btn" onClick={handleResetChat} title="Hapus riwayat chat dan mulai dari awal">
-          <Icon name="refresh" size={12} /> Reset
-        </button>
-        <span className="vera-live-badge">
-          <span className="vera-live-dot" /> AI Active
-        </span>
-      </div>
+      )}
 
       {isEmpty && (
         <div className="suggestion-panel">
@@ -294,7 +327,7 @@ export default function VeraChat({ onLogout }) {
             <div className="bubble-row assistant">
               <div className="avatar-vera">V</div>
               <div className="bubble assistant" style={{ opacity: 0.7 }}>
-                VERA is thinking...
+                V.E.R.A is thinking...
               </div>
             </div>
           )}
@@ -313,7 +346,7 @@ export default function VeraChat({ onLogout }) {
           <input
             ref={fileInputRef}
             type="file"
-            accept="application/pdf,image/*"
+            accept="application/pdf,image/*,.xlsx,.xls,.csv"
             style={{ display: "none" }}
             onChange={handleFileSelect}
           />
@@ -322,7 +355,7 @@ export default function VeraChat({ onLogout }) {
               type="button"
               className="chat-attach-icon-btn"
               onClick={() => fileInputRef.current?.click()}
-              title="Lampirkan PDF atau gambar"
+              title="Lampirkan PDF, gambar, atau Excel/CSV"
             >
               <Icon name="paperclip" size={16} />
             </button>
@@ -341,4 +374,6 @@ export default function VeraChat({ onLogout }) {
       </div>
     </div>
   );
-}
+});
+
+export default VeraChat;

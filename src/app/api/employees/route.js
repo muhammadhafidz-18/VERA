@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { getEmployees, createEmployee } from "@/lib/supabase/directory";
 
-export async function GET() {
-  return NextResponse.json({ employees: await getEmployees() });
+export async function GET(request) {
+  const { searchParams } = new URL(request.url);
+  const status = searchParams.get("status") || undefined;
+  return NextResponse.json({ employees: await getEmployees({ status }) });
 }
 
 export async function POST(request) {
