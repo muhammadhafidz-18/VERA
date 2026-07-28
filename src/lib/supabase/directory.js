@@ -393,14 +393,14 @@ export async function bulkImportMasterList(target, rows) {
 }
 
 // ---------- Divisions ----------
-export async function getDivisionsWithId() {
+export async function getDivisions() {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("divisions").select("id, name").order("name");
+  const { data, error } = await supabase.from("divisions").select("name").order("name");
   if (error) {
-    console.error("getDivisionsWithId:", error.message);
+    console.error("getDivisions:", error.message);
     return [];
   }
-  return data || [];
+  return (data || []).map((d) => d.name);
 }
 
 export async function addDivision(name) {
@@ -431,14 +431,14 @@ export async function renameDivision(oldName, newName) {
 }
 
 // ---------- Branches ----------
-export async function getBranchesWithId() {
+export async function getBranches() {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("branches").select("id, name").order("name");
+  const { data, error } = await supabase.from("branches").select("name").order("name");
   if (error) {
-    console.error("getBranchesWithId:", error.message);
+    console.error("getBranches:", error.message);
     return [];
   }
-  return data || [];
+  return (data || []).map((b) => b.name);
 }
 
 export async function addBranch(name) {
@@ -466,4 +466,29 @@ export async function renameBranch(oldName, newName) {
     return { success: false, error: error.message };
   }
   return { success: true };
+}
+
+// Same as getBranches(), but keeps the id alongside the name — needed for
+// the Branches export (Excel column "ID"), so re-importing an exported
+// file can match existing rows by ID instead of only by name.
+export async function getBranchesWithId() {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("branches").select("id, name").order("name");
+  if (error) {
+    console.error("getBranchesWithId:", error.message);
+    return [];
+  }
+  return data || [];
+}
+
+// Same as getDivisions(), but keeps the id alongside the name — needed for
+// the Divisions export (Excel column "ID").
+export async function getDivisionsWithId() {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("divisions").select("id, name").order("name");
+  if (error) {
+    console.error("getDivisionsWithId:", error.message);
+    return [];
+  }
+  return data || [];
 }
