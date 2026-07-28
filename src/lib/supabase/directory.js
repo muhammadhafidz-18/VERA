@@ -467,3 +467,28 @@ export async function renameBranch(oldName, newName) {
   }
   return { success: true };
 }
+
+// Same as getBranches(), but keeps the id alongside the name — needed for
+// the Branches export (Excel column "ID"), so re-importing an exported
+// file can match existing rows by ID instead of only by name.
+export async function getBranchesWithId() {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("branches").select("id, name").order("name");
+  if (error) {
+    console.error("getBranchesWithId:", error.message);
+    return [];
+  }
+  return data || [];
+}
+
+// Same as getDivisions(), but keeps the id alongside the name — needed for
+// the Divisions export (Excel column "ID").
+export async function getDivisionsWithId() {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("divisions").select("id, name").order("name");
+  if (error) {
+    console.error("getDivisionsWithId:", error.message);
+    return [];
+  }
+  return data || [];
+}
