@@ -15,7 +15,7 @@ export default function AuthShell({ children }) {
               </div>
               <div className="login-brand-title">V.E.R.A</div>
               <div className="login-brand-desc">
-                Virtual Employee Resource Assistant — One command to simplify your daily routine and get
+                Virtual Employee Resource Assistant — "One Voice. One Command. Endless Productivity" simplify your daily routine and get
                 things done.
               </div>
             </div>
