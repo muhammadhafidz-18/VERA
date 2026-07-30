@@ -1074,3 +1074,108 @@ select.input{cursor:pointer}
     break-inside: avoid;
   }
 }
+
+/* ============================================================
+   MOBILE / RESPONSIVE OVERRIDES
+   Strategy: sidebar becomes a slim icon-only rail (no JS state
+   needed — this works independently of the existing collapse
+   toggle), grids stack, modals go near-fullscreen, tables keep
+   horizontal scroll (already supported via .table-wrap).
+   ============================================================ */
+
+@media (max-width: 900px) {
+  /* Sidebar → compact icon rail, regardless of the desktop
+     collapse toggle state. Hide the text labels via CSS instead
+     of relying on the React `collapsed` state. */
+  .sidebar {
+    width: 64px !important;
+    padding: 0 6px 14px !important;
+  }
+  .sidebar-toggle-btn { display: none !important; }
+  .logo-text, .logo-sub,
+  .nav-card-body,
+  .sidebar-mic-text,
+  .nav-ask-pill .star {
+    display: none !important;
+  }
+  .nav-ask-pill, .nav-card {
+    justify-content: center !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+  .main { width: calc(100vw - 64px) !important; }
+
+  /* Topbar: allow wrapping instead of overflowing, tighten padding */
+  .topbar {
+    padding: 10px 14px !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  .content { padding: 14px !important; }
+
+  /* Stat card grids (Dashboard, Digest Bulanan, etc.) → 2 columns */
+  .stat-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  /* Two-column form rows / fastest-slowest cards → stack */
+  .form-row.two {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Task detail (left panel + right chat) → stack vertically */
+  .task-detail-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Modals → near full-screen sheet instead of centered box */
+  .modal-overlay {
+    padding: 0 !important;
+  }
+  .modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    border-radius: 0 !important;
+  }
+
+  /* Calendar month grid: shrink text so 7 columns still fit */
+  .cal-grid { font-size: 11px !important; }
+  .cal-cell { padding: 4px !important; }
+  .cal-event { font-size: 9.5px !important; padding: 1px 4px !important; }
+
+  /* Calendar day/week hour-grid: allow horizontal scroll instead
+     of squeezing 7 day-columns unreadably narrow */
+  .cal-gridview-body {
+    overflow-x: auto !important;
+  }
+  .cal-gridview-daycol { min-width: 90px; }
+
+  /* Digest Bulanan toolbar → stack instead of side-by-side */
+  .task-digest-toolbar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+  .task-digest-toolbar > div { justify-content: center !important; }
+
+  /* Table wrapper already scrolls horizontally (min-width:600px on
+     <table>) — just shrink the row/cell text a bit so more fits
+     before the user needs to scroll. */
+  th, td { font-size: 12px !important; padding: 8px 10px !important; }
+}
+
+@media (max-width: 480px) {
+  /* Extra-narrow phones: single-column everywhere */
+  .stat-grid { grid-template-columns: 1fr !important; }
+  .section-header, .table-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+  }
+  .btn { font-size: 11.5px !important; padding: 6px 10px !important; }
+  h1, .table-title { font-size: 15px !important; }
+}
