@@ -13,6 +13,11 @@ export const metadata = {
   description: "Virtual Employee Resource Assistant",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+};
+
 const THEME_INIT_SCRIPT = `
 (function () {
   try {

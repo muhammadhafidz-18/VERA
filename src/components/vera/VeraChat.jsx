@@ -254,6 +254,7 @@ const VeraChat = forwardRef(function VeraChat({ onLogout, compact = false, hideH
 
   return (
     <div
+      className="vera-chat-shell"
       style={{
         display: "flex",
         flexDirection: "column",

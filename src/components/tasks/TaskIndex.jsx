@@ -2,6 +2,7 @@
 "use client";
 import { useState, useMemo, useEffect } from "react";
 import Icon from "@/lib/Icon";
+import TaskFilterMenu from "./TaskFilterMenu";
 import ConfirmModal from "@/components/shared/ConfirmModal";
 import Pagination from "@/components/employees/Pagination";
 import { PAGE_SIZE } from "@/lib/vera/employeeHelpers";
@@ -120,42 +121,28 @@ export default function TaskIndex({ tasks, onOpenTask, onDeleteTask, employees }
           </span>
           <input className="input has-icon" placeholder="Search title or description..." value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
-        <select className="input" style={{ width: 150 }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          <option value="">All Status</option>
-          {Object.entries(TASK_STATUS_STYLES).map(([key, s]) => (
-            <option key={key} value={key}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-        <select className="input" style={{ width: 140 }} value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
-          <option value="">All Priority</option>
-          {Object.entries(TASK_PRIORITY_STYLES).map(([key, p]) => (
-            <option key={key} value={key}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-        <select className="input" style={{ width: 160 }} value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>
-          <option value="">All Assignees</option>
-          {assigneeOptions.map((e) => (
-            <option key={e.id} value={e.id}>
-              {e.name}
-            </option>
-          ))}
-        </select>
-        <select className="input" style={{ width: 150 }} value={dueFilter} onChange={(e) => setDueFilter(e.target.value)}>
-          <option value="">All Due Dates</option>
-          <option value="overdue">Overdue</option>
-          <option value="today">Due Today</option>
-          <option value="this_week">Due This Week</option>
-          <option value="no_due_date">No Due Date</option>
-        </select>
-        <select className="input" style={{ width: 170 }} value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-          <option value="">Sort: Default</option>
-          <option value="due_asc">Sort: Due Date (Soonest)</option>
-          <option value="priority_desc">Sort: Priority (Highest)</option>
-        </select>
+
+        <TaskFilterMenu
+          statusFilter={statusFilter}
+          priorityFilter={priorityFilter}
+          assigneeFilter={assigneeFilter}
+          dueFilter={dueFilter}
+          sortBy={sortBy}
+          assigneeOptions={assigneeOptions}
+          onStatusChange={setStatusFilter}
+          onPriorityChange={setPriorityFilter}
+          onAssigneeChange={setAssigneeFilter}
+          onDueChange={setDueFilter}
+          onSortChange={setSortBy}
+          onReset={() => {
+            setStatusFilter("");
+            setPriorityFilter("");
+            setAssigneeFilter("");
+            setDueFilter("");
+            setSortBy("");
+          }}
+        />
+
         {hasActiveFilters && (
           <button
             className="btn btn-secondary btn-sm"
@@ -174,7 +161,7 @@ export default function TaskIndex({ tasks, onOpenTask, onDeleteTask, employees }
       </div>
 
       <div className="table-wrap">
-        <table>
+        <table className="card-table">
           <thead>
             <tr>
               <th>Task</th>
@@ -195,23 +182,23 @@ export default function TaskIndex({ tasks, onOpenTask, onDeleteTask, employees }
               </tr>
             )}
             {paged.map((t) => {
-              const assignee = taskUserById(employees, t.assignedTo);
-              const isOverdue = t.dueDate && t.dueDate < Date.now() && t.status !== "done" && t.status !== "cancelled";
-              const canDelete = t.status === "open" && t.chats.filter((c) => !c.isSystem).length === 0;
-              return (
-                <tr key={t.id} onClick={() => onOpenTask(t.id)} style={{ cursor: "pointer" }}>
-                  <td>
-                    <div style={{ fontWeight: 500 }}>{t.title}</div>
-                    <div style={{ color: "var(--text3)", fontSize: 11.5, maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.description}</div>
-                  </td>
-                  <td>
-                    {assignee.name}
-                    <div style={{ fontSize: 11, color: "var(--text3)" }}>{assignee.division}</div>
-                  </td>
-                  <td>
-                    <span className={`badge ${TASK_PRIORITY_STYLES[t.priority].badge}`}>{TASK_PRIORITY_STYLES[t.priority].label}</span>
-                  </td>
-                  <td style={isOverdue ? { color: "var(--red)", fontWeight: 600 } : {}}>
+                const assignee = taskUserById(employees, t.assignedTo);
+                const isOverdue = t.dueDate && t.dueDate < Date.now() && t.status !== "done" && t.status !== "cancelled";
+                const canDelete = t.status === "open" && t.chats.filter((c) => !c.isSystem).length === 0;
+                return (
+                  <tr key={t.id} onClick={() => onOpenTask(t.id)} style={{ cursor: "pointer" }}>
+                    <td data-label="Task">
+                      <div style={{ fontWeight: 500 }}>{t.title}</div>
+                      <div style={{ color: "var(--text3)", fontSize: 11.5, maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.description}</div>
+                    </td>
+                    <td data-label="To">
+                      {assignee.name}
+                      <div style={{ fontSize: 11, color: "var(--text3)" }}>{assignee.division}</div>
+                    </td>
+                    <td data-label="Priority">
+                      <span className={`badge ${TASK_PRIORITY_STYLES[t.priority].badge}`}>{TASK_PRIORITY_STYLES[t.priority].label}</span>
+                    </td>
+                    <td data-label="Due" style={isOverdue ? { color: "var(--red)", fontWeight: 600 } : {}}>
                     {t.dueDate ? formatTaskDate(t.dueDate) : "-"}
                     {isOverdue && " (Overdue)"}
                   </td>

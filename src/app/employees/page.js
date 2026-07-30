@@ -307,7 +307,7 @@ export default function EmployeesPage() {
         </div>
 
         <div className="table-wrap">
-          <table>
+          <table className="card-table">
             <thead>
               <tr>
                 <th>Employee ID</th>
@@ -333,15 +333,15 @@ export default function EmployeesPage() {
               )}
               {paged.map((e) => (
                 <tr key={e.id}>
-                  <td className="mono">{e.id}</td>
-                  <td style={{ fontWeight: 500 }}>{e.name}</td>
-                  {visibleColumns.email && <td className="mono">{e.email}</td>}
-                  {visibleColumns.branch && <td>{e.branch}</td>}
-                  {visibleColumns.division && <td>{e.division}</td>}
-                  {visibleColumns.joinDate && <td className="mono">{e.joinDate}</td>}
-                  {visibleColumns.phone && <td className="mono">{e.phone}</td>}
+                  <td className="mono" data-label="Employee ID">{e.id}</td>
+                  <td style={{ fontWeight: 500 }} data-label="Name">{e.name}</td>
+                  {visibleColumns.email && <td className="mono" data-label="Email">{e.email}</td>}
+                  {visibleColumns.branch && <td data-label="Branch">{e.branch}</td>}
+                  {visibleColumns.division && <td data-label="Division">{e.division}</td>}
+                  {visibleColumns.joinDate && <td className="mono" data-label="Join Date">{e.joinDate}</td>}
+                  {visibleColumns.phone && <td className="mono" data-label="Phone">{e.phone}</td>}
                   {visibleColumns.status && (
-                    <td>
+                    <td data-label="Status">
                       {e.status === "inactive" ? (
                         <span className="badge gray">Resigned</span>
                       ) : (
@@ -349,8 +349,8 @@ export default function EmployeesPage() {
                       )}
                     </td>
                   )}
-                  {visibleColumns.resignDate && <td className="mono">{e.resignDate || "-"}</td>}
-                  <td>
+                  {visibleColumns.resignDate && <td className="mono" data-label="Resign Date">{e.resignDate || "-"}</td>}
+                  <td className="card-actions">
                     <button
                       className="btn-icon"
                       title="Edit"
