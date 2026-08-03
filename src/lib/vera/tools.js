@@ -3,18 +3,6 @@
 export const VERA_TOOLS = [
   {
     name: "get_employees",
-    description: "Search or list employees from the company's Employee Directory. Use this whenever the user asks about who works where, employee details, headcount, or lists of employees.",
-    input_schema: {
-      type: "object",
-      properties: {
-        search: { type: "string", description: "Optional keyword to match against employee name, ID, or email" },
-        division: { type: "string", description: "Optional division name to filter by" },
-        branch: { type: "string", description: "Optional branch/city to filter by" },
-      },
-    },
-  },
-  {
-    name: "get_employees",
     description: "Search or list employees from the company's Employee Directory. Use this whenever the user asks about who works where, employee details, headcount, or lists of employees. By default this only returns active employees — pass status when the user is specifically asking about resigned/inactive employees or wants everyone regardless of status.",
     input_schema: {
       type: "object",
@@ -82,7 +70,7 @@ export const VERA_TOOLS = [
   },
   {
     name: "create_meeting",
-    description: "Create a new meeting in the Meeting Schedule. Required: title, date, time. If the user hasn't given date/time/who it's with/what it's about, ask for the missing pieces first. Before creating, it's good practice to call get_meetings for the same date to check for a scheduling conflict.",
+    description: "Create a new meeting in the Meeting Schedule. Required: title, date, startime, endtime. If the user hasn't given date/time/who it's with/what it's about, ask for the missing pieces first. Before creating, it's good practice to call get_meetings for the same date to check for a scheduling conflict.",
     input_schema: {
       type: "object",
       properties: {
@@ -153,6 +141,23 @@ export const VERA_TOOLS = [
     description: "List tasks. Use this to answer questions about task status, who a task is assigned to, or how many tasks exist. Optionally resolve a person's tasks by first calling get_employees to find their ID, then filter results yourself by assignedTo/createdBy in your reply.",
     input_schema: { type: "object", properties: {} },
   },
+
+  {
+    name: "create_task",
+    description: "Create a new task in the Task menu, assigned to a specific employee. Only call this after confirming title and assignedTo with the user — ask for any missing details first rather than guessing. If the user only gave a name (not an ID), resolve it via get_employees first.",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        description: { type: "string" },
+        assignedTo: { type: "string", description: "Employee ID to assign the task to, e.g. EMP-0004" },
+        priority: { type: "string", enum: ["low", "medium", "high"], description: "Defaults to 'medium' if not specified." },
+        dueDate: { type: "string", description: "Format YYYY-MM-DD" },
+      },
+      required: ["title", "assignedTo"],
+    },
+  },
+
   {
     name: "update_task",
     description: "Update fields on an existing task (title, description, priority, due date, assignee, or status). Requires the task ID (use get_tasks first if you only have a description of it). Only include the fields that should change. To change status, set the `status` field to one of: open, in_progress, done.",

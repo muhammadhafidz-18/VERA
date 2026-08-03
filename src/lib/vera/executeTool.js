@@ -35,6 +35,17 @@ export async function executeVeraTool(name, input, context = {}) {
     return await createEmployee(input);
   }
 
+  if (name === "get_meetings") {
+  const results = await getMeetings(input);
+  return {
+    total_matches: results.length,
+    results: results.slice(0, 25).map((m) => ({
+      id: m.id, title: m.title, date: m.date, startTime: m.startTime, endTime: m.endTime,
+      location: m.location, attendeeIds: m.attendeeIds,
+    })),
+  };
+}
+
   if (name === "create_meeting") {
     if (!input.title || !input.date || !input.startTime || !input.endTime) {
       return { success: false, error: "Missing required fields (title, date, startTime, endTime)." };

@@ -132,76 +132,78 @@ export default function TaskMonthlyDigestPage() {
     }
   }
 
+  // Pulls the monthly digest for every employee (not just the one currently
+  // selected in the dropdown) and lays them out as one row per employee —
+  // matching the flat table format Thom wants, instead of the old
+  // single-employee vertical report. The "Ringkasan AI" column reads
+  // whatever narrative each employee already has saved — it does NOT
+  // trigger a fresh Claude generation per employee here, since that would
+  // be slow (N sequential AI calls) and would silently burn into each
+  // employee's 2x/month generate limit without them asking for it.
   async function handleExportExcel() {
-    if (!stats) return;
+    if (!employees.length) return;
     setExportingExcel(true);
     try {
+      const allResults = await Promise.all(
+        employees.map(async (emp) => {
+          const res = await fetch(`/api/tasks/monthly-digest?employeeId=${emp.id}&year=${year}&month=${month}&roleFilter=${roleFilter}`);
+          const data = await res.json();
+          return { employee: emp, stats: data.stats || null, narrative: data.narrative || null };
+        })
+      );
+
       const workbook = new ExcelJS.Workbook();
       workbook.creator = "VERA";
       const sheet = workbook.addWorksheet("Digest Bulanan");
-      sheet.columns = [{ width: 26 }, { width: 60 }];
 
-      sheet.mergeCells("A1:B1");
-      const titleCell = sheet.getCell("A1");
-      titleCell.value = "Digest Bulanan — Task Performance Report";
-      titleCell.font = { bold: true, size: 14, color: { argb: "FFFFFFFF" } };
-      titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1D5FA0" } };
-      titleCell.alignment = { vertical: "middle", horizontal: "left" };
-      sheet.getRow(1).height = 28;
+      const HEADERS = [
+        "Employee", "Periode", "Filter", "Total Tiket", "Sudah Direspon", "Belum Direspon",
+        "Rata-rata First Response", "Respon Tercepat", "Respon Terlama", "Ringkasan AI",
+      ];
+      sheet.columns = [
+        { width: 22 }, { width: 16 }, { width: 26 }, { width: 12 }, { width: 14 },
+        { width: 14 }, { width: 20 }, { width: 30 }, { width: 30 }, { width: 60 },
+      ];
 
-      sheet.addRow([]);
-
-      [
-        ["Agent", stats.employeeName],
-        ["Periode", monthLabel],
-        ["Filter", ROLE_FILTER_LABELS[roleFilter]],
-      ].forEach(([label, value]) => {
-        const row = sheet.addRow([label, value]);
-        row.getCell(1).font = { bold: true, color: { argb: "FF5B6573" } };
+      const headerRow = sheet.addRow(HEADERS);
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1D5FA0" } };
+        cell.alignment = { vertical: "middle", horizontal: "left" };
       });
+      headerRow.height = 22;
+      sheet.views = [{ state: "frozen", ySplit: 1 }];
 
-      sheet.addRow([]);
+      allResults.forEach(({ employee, stats: s, narrative: n }) => {
+        const fastestLabel = s?.fastest ? `${formatDuration(s.fastest.responseMs)} — ${s.fastest.title}` : "-";
+        const slowestLabel = s?.slowest ? `${formatDuration(s.slowest.responseMs)} — ${s.slowest.title}` : "-";
 
-      function addSectionHeader(text) {
-        const row = sheet.addRow([text]);
-        sheet.mergeCells(`A${row.number}:B${row.number}`);
-        const cell = row.getCell(1);
-        cell.font = { bold: true, size: 11, color: { argb: "FFFFFFFF" } };
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF3B7BC4" } };
-        cell.alignment = { vertical: "middle" };
-        row.height = 20;
-      }
+        const row = sheet.addRow([
+          employee.name,
+          monthLabel,
+          ROLE_FILTER_LABELS[roleFilter],
+          s?.totalTickets ?? 0,
+          s?.respondedCount ?? 0,
+          s?.unrespondedCount ?? 0,
+          s?.avgMs != null ? formatDuration(s.avgMs) : "-",
+          fastestLabel,
+          slowestLabel,
+          n || "(belum di-generate)",
+        ]);
 
-      function addStatRow(label, value, color) {
-        const row = sheet.addRow([label, value]);
-        row.getCell(1).font = { bold: true };
-        if (color) row.getCell(2).font = { bold: true, color: { argb: color } };
-        row.getCell(1).border = { bottom: { style: "thin", color: { argb: "FFE8EBEF" } } };
-        row.getCell(2).border = { bottom: { style: "thin", color: { argb: "FFE8EBEF" } } };
-      }
+        row.getCell(4).font = { bold: true, color: { argb: "FF1D5FA0" } }; // Total Tiket
+        row.getCell(5).font = { bold: true, color: { argb: "FF3F9D4E" } }; // Sudah Direspon
+        row.getCell(6).font = { bold: true, color: { argb: "FFC98A18" } }; // Belum Direspon
+        if (s?.fastest) row.getCell(8).font = { color: { argb: "FF3F9D4E" } };
+        if (s?.slowest) row.getCell(9).font = { color: { argb: "FFD6543F" } };
+        row.getCell(10).alignment = { wrapText: true, vertical: "top" };
 
-      addSectionHeader("Statistik");
-      addStatRow("Total Tiket", stats.totalTickets, "FF1D5FA0");
-      addStatRow("Sudah Direspon", stats.respondedCount, "FF3F9D4E");
-      addStatRow("Belum Direspon", stats.unrespondedCount, "FFC98A18");
-      addStatRow("Rata-rata First Response", stats.avgMs != null ? formatDuration(stats.avgMs) : "-");
-
-      sheet.addRow([]);
-
-      addSectionHeader("Respon Ekstrem");
-      addStatRow("Respon Tercepat", stats.fastest ? `${formatDuration(stats.fastest.responseMs)} — ${stats.fastest.title}` : "-", "FF3F9D4E");
-      addStatRow("Respon Terlama", stats.slowest ? `${formatDuration(stats.slowest.responseMs)} — ${stats.slowest.title}` : "-", "FFD6543F");
-
-      sheet.addRow([]);
-
-      addSectionHeader("Ringkasan AI");
-      const narrativeRow = sheet.addRow(["", narrative || "(belum di-generate)"]);
-      narrativeRow.getCell(2).alignment = { wrapText: true, vertical: "top" };
-      sheet.getRow(narrativeRow.number).height = Math.max(20, Math.ceil((narrative?.length || 0) / 90) * 15);
-
-      sheet.addRow([]);
-      const footerRow = sheet.addRow(["Generated by VERA — " + new Date().toLocaleString("id-ID")]);
-      footerRow.getCell(1).font = { italic: true, size: 9, color: { argb: "FF94A0AE" } };
+        row.height = Math.max(20, Math.ceil((n?.length || 20) / 55) * 15);
+        row.eachCell((cell) => {
+          cell.border = { bottom: { style: "thin", color: { argb: "FFE8EBEF" } } };
+          if (cell.col !== 10) cell.alignment = { ...cell.alignment, vertical: "top" };
+        });
+      });
 
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
@@ -209,7 +211,7 @@ export default function TaskMonthlyDigestPage() {
       const a = document.createElement("a");
       const safeMonth = monthLabel.replace(/\s+/g, "-");
       a.href = url;
-      a.download = `Digest-Bulanan-${stats.employeeName}-${safeMonth}.xlsx`;
+      a.download = `Digest-Bulanan-Semua-Karyawan-${safeMonth}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } finally {
@@ -274,8 +276,8 @@ export default function TaskMonthlyDigestPage() {
             <Icon name="ticket" size={17} style={{ color: "var(--accent)" }} /> Digest Bulanan
           </div>
           <div className="no-print" style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-secondary" onClick={handleExportExcel} disabled={!stats || exportingExcel}>
-              <Icon name="file-text" size={13} /> {exportingExcel ? "Menyiapkan..." : "Export Excel"}
+            <button className="btn btn-secondary" onClick={handleExportExcel} disabled={!employees.length || exportingExcel}>
+              <Icon name="file-text" size={13} /> {exportingExcel ? `Menyiapkan ${employees.length} karyawan...` : "Export Excel (Semua Karyawan)"}
             </button>
             <button className="btn btn-secondary" onClick={handleExportPDF} disabled={!stats || printLoading}>
               <Icon name="file-text" size={13} /> {printLoading ? "Menyiapkan..." : "Export PDF"}

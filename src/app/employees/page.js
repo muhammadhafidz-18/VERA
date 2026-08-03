@@ -469,8 +469,7 @@ export default function EmployeesPage() {
                       </div>
                     </div>
                     <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
-                      {importResult.results
-                        .filter((r) => !r.success)
+                      {(importResult.results ?? []).filter((r) => !r.success)
                         .map((r, i) => (
                           <div
                             key={i}

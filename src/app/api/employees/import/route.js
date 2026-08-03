@@ -61,15 +61,25 @@ export async function POST(request) {
     return NextResponse.json({ error: "The file must have Name and Email columns (use the exported file as a template)." }, { status: 400 });
   }
 
-  const employees = rawRows.slice(1, 1 + MAX_ROWS).map((row) => {
-    const obj = {};
-    fieldByCol.forEach((field, i) => {
-      if (!field) return;
-      const value = row[i];
-      obj[field] = value === undefined || value === null ? "" : String(value).trim();
-    });
-    return obj;
-  });
+  const employees = rawRows.slice(1, 1 + MAX_ROWS)
+    .map((row) => {
+      const obj = {};
+      fieldByCol.forEach((field, i) => {
+        if (!field) return;
+        const value = row[i];
+        obj[field] = value === undefined || value === null ? "" : String(value).trim();
+      });
+      return obj;
+    })
+    // Buang row yang semua kolomnya kosong — SheetJS's `blankrows: false`
+    // tidak cukup karena template Excel (dibuat via ExcelJS) sering punya
+    // cell value eksplisit ("") di row kosong akibat styling/formatting,
+    // sehingga row itu tetap dianggap "ada data" oleh SheetJS.
+    .filter((emp) => Object.values(emp).some((v) => v !== ""));
+
+  if (employees.length === 0) {
+    return NextResponse.json({ error: "No valid data rows found after filtering empty rows." }, { status: 400 });
+  }
 
   const result = await bulkImportEmployees(employees);
   return NextResponse.json(result);

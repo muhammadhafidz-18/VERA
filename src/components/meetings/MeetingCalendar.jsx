@@ -180,7 +180,7 @@ function MonthView({ anchor, eventsByDate, todayIso, onDayClick }) {
                     <div
                       key={m.id}
                       className="cal-event"
-                      style={{ background: `color-mix(in srgb, ${col} 15%, white)`, borderLeft: `3px solid ${col}` }}
+                      style={{ background: `color-mix(in srgb, ${col} 15%, var(--bg2))`, borderLeft: `3px solid ${col}` }}
                       title={`${m.title} — ${m.startTime}–${m.endTime} — ${m.location || "-"}`}
                     >
                       {m.title}
@@ -258,7 +258,7 @@ function GridView({ days, eventsByDate, todayIso, onDayClick, onEventClick }) {
                   <div
                     key={m.id}
                     className="cal-gridview-event"
-                    style={{ top, height, background: `color-mix(in srgb, ${col} 22%, white)`, borderLeft: `3px solid ${col}` }}
+                    style={{ top, height, background: `color-mix(in srgb, ${col} 22%, var(--bg2))`, borderLeft: `3px solid ${col}` }}
                     title={`${m.title} — ${m.startTime}–${m.endTime} — ${m.location || "-"}`}
                     onClick={(e) => {
                       e.stopPropagation();

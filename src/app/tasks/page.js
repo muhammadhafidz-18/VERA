@@ -2,7 +2,6 @@
 "use client";
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import Link from "next/link";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import Icon from "@/lib/Icon";
 import TaskIndex from "@/components/tasks/TaskIndex";
@@ -21,6 +20,7 @@ function TasksPageInner() {
   const [view, setView] = useState("index");
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [loadingTaskDetail, setLoadingTaskDetail] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -48,9 +48,49 @@ function TasksPageInner() {
 
   const selectedTask = tasks.find((t) => t.id === selectedTaskId);
 
-  function openTask(id) {
+  // Poll for new chat messages while a task's detail view is open. There's
+  // no Supabase Realtime subscription set up yet — this is a simple,
+  // low-effort stand-in so messages from other participants (e.g. sent from
+  // another browser/session) show up without a manual page refresh. Runs
+  // silently (no loading spinner) so it doesn't interrupt someone mid-type
+  // in the chat input below.
+  useEffect(() => {
+    if (view !== "detail" || !selectedTaskId) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/tasks/${encodeURIComponent(selectedTaskId)}`);
+        const data = await res.json();
+        if (data.task) {
+          setTasks((prev) => prev.map((t) => (t.id === selectedTaskId ? data.task : t)));
+        }
+      } catch {
+        // Silent — a missed poll just means we retry in 4s, no need to
+        // surface a network hiccup to the user for a background refresh.
+      }
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [view, selectedTaskId]);
+
+  // The task list (`/api/tasks`) only returns a lightweight `{id, isSystem}`
+  // shape for each chat message — enough to compute the "can this task be
+  // deleted" rule, but missing message text, sender, and timestamp. Opening
+  // a task must fetch the full record (`/api/tasks/[id]`, backed by
+  // getTaskById which actually JOINs to `employees` for sender name) and
+  // merge it in, otherwise every chat bubble renders as "Unknown" with no
+  // message and "-" as the time.
+  async function openTask(id) {
     setSelectedTaskId(id);
     setView("detail");
+    setLoadingTaskDetail(true);
+    try {
+      const res = await fetch(`/api/tasks/${encodeURIComponent(id)}`);
+      const data = await res.json();
+      if (data.task) {
+        setTasks((prev) => prev.map((t) => (t.id === id ? data.task : t)));
+      }
+    } finally {
+      setLoadingTaskDetail(false);
+    }
   }
 
   async function updateTask(id, patch) {
@@ -135,16 +175,16 @@ function TasksPageInner() {
     <DashboardLayout hideFloatingChat={view === "detail"}>
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
-        <div style={{ fontSize: 12.5, color: "var(--text2)" }}>Submit tasks, complaints, or requests to other divisions.</div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <Link href="/tasks/digest" className="btn btn-secondary">
-            <Icon name="history" size={13} /> Digest Bulanan
-          </Link>
-          <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
-            <Icon name="plus" size={13} /> New Task
-          </button>
+          <div style={{ fontSize: 12.5, color: "var(--text2)" }}>Submit tasks, complaints, or requests to other divisions.</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <a className="btn btn-secondary" href="/tasks/digest">
+              <Icon name="file-text" size={13} /> Monthly Digest
+            </a>
+            <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
+              <Icon name="plus" size={13} /> New Task
+            </button>
+          </div>
         </div>
-      </div>
 
         {view === "index" && <TaskIndex tasks={tasks} onOpenTask={openTask} onDeleteTask={handleDeleteTask} employees={employees} />}
 
@@ -153,6 +193,7 @@ function TasksPageInner() {
             task={selectedTask}
             employees={employees}
             currentUserId={currentUserId}
+            loadingDetail={loadingTaskDetail}
             onBack={() => setView("index")}
             onUpdateTask={(patch) => updateTask(selectedTask.id, patch)}
             onEditTask={(patch) => handleEditTask(selectedTask, patch)}
