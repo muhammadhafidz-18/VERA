@@ -58,7 +58,7 @@ export default function Sidebar() {
       </div>
 
       <div className="nav-section">
-        <Link href={PAGE_PATHS.command} className={`nav-ask-pill${pathname === PAGE_PATHS.command ? " active" : ""}`} title={collapsed ? "Ask VERA" : ""}>
+        <Link href={PAGE_PATHS.command} prefetch={false} className={`nav-ask-pill${pathname === PAGE_PATHS.command ? " active" : ""}`} title={collapsed ? "Ask VERA" : ""}>
           <div className="sidebar-mic-icon">
             <Icon name="microphone" size={14} />
           </div>
@@ -79,6 +79,7 @@ export default function Sidebar() {
           <Link
             key={item.key}
             href={PAGE_PATHS[item.key]}
+            prefetch={false}
             ref={item.key === "meetings" ? meetingRef : null}
             className={`nav-card${pathname === PAGE_PATHS[item.key] ? " active" : ""}`}
             title={collapsed ? item.label : ""}

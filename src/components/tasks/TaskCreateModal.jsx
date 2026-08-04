@@ -11,13 +11,33 @@ export default function TaskCreateModal({ onClose, onCreate, employees, currentU
   const [assignedTo, setAssignedTo] = useState(assignableUsers[0]?.id || "");
   const [priority, setPriority] = useState("medium");
   const [dueDate, setDueDate] = useState("");
+  // Guards against double/rapid-clicking "Create Task" while the request is
+  // still in flight — without this, clicking multiple times (e.g. because
+  // the request feels slow, or a prior attempt showed an error) fires a
+  // separate onCreate/POST for each click, creating duplicate tasks since
+  // the modal only closes after the request actually succeeds.
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    if (submitting || !title.trim()) return;
+    setSubmitting(true);
+    try {
+      await onCreate({ title, description, assignedTo, priority, dueDate: dueDate || null });
+    } finally {
+      // If onCreate succeeded, the parent unmounts this modal anyway (so this
+      // is a no-op). If it failed (e.g. showed an alert), this re-enables
+      // the button so the user can fix something and try again — without it,
+      // a failed attempt would leave the form permanently stuck disabled.
+      setSubmitting(false);
+    }
+  };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={submitting ? undefined : onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h3>New Task</h3>
-          <button className="btn-icon" onClick={onClose}>
+          <button className="btn-icon" onClick={onClose} disabled={submitting}>
             <Icon name="x" size={14} />
           </button>
         </div>
@@ -58,15 +78,11 @@ export default function TaskCreateModal({ onClose, onCreate, employees, currentU
           </div>
         </div>
         <div className="modal-foot">
-          <button className="btn btn-secondary" onClick={onClose}>
+          <button className="btn btn-secondary" onClick={onClose} disabled={submitting}>
             Cancel
           </button>
-          <button
-            className="btn btn-primary"
-            disabled={!title.trim()}
-            onClick={() => onCreate({ title, description, assignedTo, priority, dueDate: dueDate || null })}
-          >
-            Create Task
+          <button className="btn btn-primary" disabled={!title.trim() || submitting} onClick={handleSubmit}>
+            {submitting ? "Creating…" : "Create Task"}
           </button>
         </div>
       </div>

@@ -63,12 +63,15 @@ function mapAuditRow(row) {
   };
 }
 
+// Atomic ID generation via a Postgres sequence (same pattern as
+// employee_code) — nextval() is guaranteed unique even under concurrent
+// requests, unlike the old approach of scanning all task_codes and taking
+// MAX+1 in JS, which could compute the same "next" number twice if two
+// tasks were created around the same time.
 async function nextTaskCode(supabase) {
-  const { data } = await supabase.from("tasks").select("task_code");
-  const nums = (data || [])
-    .map((t) => parseInt(String(t.task_code).replace(/[^0-9]/g, ""), 10))
-    .filter((n) => !isNaN(n));
-  return `TSK-${String((nums.length ? Math.max(...nums) : 0) + 1).padStart(4, "0")}`;
+  const { data, error } = await supabase.rpc("next_task_code");
+  if (error) throw new Error(`Failed to generate task code: ${error.message}`);
+  return data;
 }
 
 async function fetchChats(supabase, taskUuid) {
@@ -173,7 +176,12 @@ export async function createTask(input) {
   }
 
   const current = await getCurrentEmployee();
-  const taskCode = await nextTaskCode(supabase);
+  let taskCode;
+  try {
+    taskCode = await nextTaskCode(supabase);
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 
   const { data: inserted, error } = await supabase
     .from("tasks")
@@ -391,17 +399,21 @@ export async function changeTaskStatus(taskCode, newStatus) {
   return { success: true, task: mapTaskRow(full, { chats, auditLog }) };
 }
 
+// ---------- Cron: overdue task notifications ----------
+// Sends exactly ONE overdue notification per task, ever — no repeated
+// escalation reminders every N days. Once overdue_notified_at is set, this
+// task is permanently excluded from future runs (unless overdue_notified_at
+// gets manually cleared, e.g. if the due date is pushed back).
 export async function notifyOverdueTasks() {
   const admin = createAdminClient();
   const nowIso = new Date().toISOString();
-  const escalationThreshold = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
 
   const { data: overdueTasks, error } = await admin
     .from("tasks")
     .select("id, task_code, title, due_date, status, created_by, assigned_to, overdue_notified_at")
     .lt("due_date", nowIso)
     .not("status", "in", "(done,cancelled)")
-    .or(`overdue_notified_at.is.null,overdue_notified_at.lt.${escalationThreshold}`);
+    .is("overdue_notified_at", null);
 
   if (error) {
     console.error("notifyOverdueTasks:", error.message);
