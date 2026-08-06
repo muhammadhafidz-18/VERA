@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { computeMonthlyTaskStats, getMonthlyDigestNarrative, saveMonthlyDigestNarrative } from "@/lib/supabase/tasks";
+import { getMonthlyDigestCached, saveMonthlyDigestNarrative } from "@/lib/supabase/tasks";
 import { callClaude } from "@/lib/vera/claude";
 import { TASK_SYSTEM_PROMPT_MONTHLY_DIGEST } from "@/lib/vera/taskPrompts";
 
@@ -33,20 +33,24 @@ export async function POST(request) {
     return NextResponse.json({ error: "employeeId, year, and month are required." }, { status: 400 });
   }
 
-  const narrativeState = await getMonthlyDigestNarrative(employeeId, year, month);
-  if ((narrativeState.generateCount || 0) >= 2) {
+  // Narrative is generated from the last synced snapshot, not a fresh
+  // live computation — otherwise the AI's numbers could drift from what's
+  // shown on screen (which also only reflects the last sync).
+  const cached = await getMonthlyDigestCached(employeeId, year, month);
+  if (!cached) return NextResponse.json({ error: "Employee not found." }, { status: 404 });
+
+  if (!cached.syncedAt || !cached.statsAll) {
+    return NextResponse.json(
+      { error: 'Data bulan ini belum pernah dihitung. Klik "Hitung Sekarang" dulu sebelum generate ringkasan AI.' },
+      { status: 400 }
+    );
+  }
+
+  if ((cached.generateCount || 0) >= 2) {
     return NextResponse.json({ error: "You've reached the 2x generate limit for this month/agent." }, { status: 429 });
   }
 
-  // Always compute all 3 angles, regardless of which filter is active on
-  // screen — the narrative is meant to cover all of them in one go.
-  const [statsAll, statsToMe, statsByMe] = await Promise.all([
-    computeMonthlyTaskStats(employeeId, year, month, "all"),
-    computeMonthlyTaskStats(employeeId, year, month, "assigned_to_me"),
-    computeMonthlyTaskStats(employeeId, year, month, "assigned_by_me"),
-  ]);
-
-  if (!statsAll) return NextResponse.json({ error: "Employee not found." }, { status: 404 });
+  const { statsAll, statsToMe, statsByMe } = cached;
   if (statsAll.totalTickets === 0) {
     return NextResponse.json({ error: "No tickets this month to analyze." }, { status: 400 });
   }

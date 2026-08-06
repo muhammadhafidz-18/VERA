@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
-import { computeMonthlyTaskStats, getMonthlyDigestNarrative } from "@/lib/supabase/tasks";
+import { getMonthlyDigestCached } from "@/lib/supabase/tasks";
 
+// Read-only — this NEVER computes stats live anymore. It only returns
+// whatever the last "Hitung Sekarang" / "Sync Semua Employee" click
+// saved. If nobody has synced this employee/month yet, stats comes back
+// null and the page shows an empty state with a sync button instead of
+// silently crunching numbers on every page view.
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const employeeId = searchParams.get("employeeId");
@@ -12,9 +17,16 @@ export async function GET(request) {
     return NextResponse.json({ error: "employeeId, year, and month are required." }, { status: 400 });
   }
 
-  const stats = await computeMonthlyTaskStats(employeeId, year, month, roleFilter);
-  if (!stats) return NextResponse.json({ error: "Employee not found." }, { status: 404 });
+  const cached = await getMonthlyDigestCached(employeeId, year, month);
+  if (!cached) return NextResponse.json({ error: "Employee not found." }, { status: 404 });
 
-  const narrativeState = await getMonthlyDigestNarrative(employeeId, year, month);
-  return NextResponse.json({ stats, ...narrativeState });
+  const statsByFilter = { all: cached.statsAll, assigned_to_me: cached.statsToMe, assigned_by_me: cached.statsByMe };
+
+  return NextResponse.json({
+    stats: statsByFilter[roleFilter] || null,
+    syncedAt: cached.syncedAt,
+    narrative: cached.narrative,
+    generatedAt: cached.generatedAt,
+    generateCount: cached.generateCount,
+  });
 }

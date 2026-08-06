@@ -447,65 +447,24 @@ export async function notifyOverdueTasks() {
 }
 
 // ---------- Monthly Digest ----------
-export async function computeMonthlyTaskStats(employeeCode, year, month, roleFilter = "all") {
-  // month: 1-12 (calendar convention, not JS's 0-11)
-  // roleFilter: "all" | "assigned_to_me" | "assigned_by_me"
-  const supabase = await createClient();
-  const { data: employee } = await supabase
-    .from("employees")
-    .select("id, name")
-    .eq("employee_code", employeeCode)
-    .maybeSingle();
-  if (!employee) return null;
+//
+// Stats are NOT computed live on every page view. They're computed once
+// when the user (or "Sync Semua Employee") explicitly triggers a sync,
+// then cached in task_monthly_digests.stats_all / stats_assigned_to_me /
+// stats_assigned_by_me (+ stats_synced_at). Everything that reads the
+// digest — the page, PDF export, Excel export, the AI narrative — reads
+// that cached snapshot instead of re-querying tasks/task_chats each time.
+// This also means the numbers only change when someone re-syncs, which is
+// the point: predictable, on-demand, not a background recalculation that
+// silently drifts every time the page happens to be opened.
 
-  const start = new Date(Date.UTC(year, month - 1, 1)).toISOString();
-  const end = new Date(Date.UTC(month === 12 ? year + 1 : year, month === 12 ? 0 : month, 1)).toISOString();
-
-  let query = supabase
-    .from("tasks")
-    .select("id, task_code, title, created_at, created_by, assigned_to")
-    .gte("created_at", start)
-    .lt("created_at", end);
-
-  if (roleFilter === "assigned_to_me") {
-    query = query.eq("assigned_to", employee.id);
-  } else if (roleFilter === "assigned_by_me") {
-    query = query.eq("created_by", employee.id);
-  } else {
-    query = query.or(`assigned_to.eq.${employee.id},created_by.eq.${employee.id}`);
-  }
-
-  const { data: tasksInMonth, error } = await query;
-
-  if (error) {
-    console.error("computeMonthlyTaskStats:", error.message);
-    return null;
-  }
-
-  const taskIds = (tasksInMonth || []).map((t) => t.id);
-  const firstResponseByTask = {};
-  const createdByTask = {};
-  (tasksInMonth || []).forEach((t) => {
-    createdByTask[t.id] = t.created_by;
-  });
-
-  if (taskIds.length) {
-    const { data: chats } = await supabase
-      .from("task_chats")
-      .select("task_id, sender_id, created_at")
-      .in("task_id", taskIds)
-      .eq("is_system", false)
-      .order("created_at", { ascending: true });
-
-    (chats || []).forEach((c) => {
-      if (firstResponseByTask[c.task_id]) return;
-      if (c.sender_id && c.sender_id !== createdByTask[c.task_id]) {
-        firstResponseByTask[c.task_id] = c.created_at;
-      }
-    });
-  }
-
-  const results = (tasksInMonth || []).map((t) => {
+// Pure function: given a list of task rows (each already filtered down to
+// the ones relevant for one employee/role-filter) and a map of task_id ->
+// first-response ISO timestamp, produces the same stats shape the digest
+// UI expects. No DB access — this just crunches numbers already in memory,
+// so it's cheap to call once per employee per role-filter in a batch.
+function statsFromTasks(tasks, firstResponseByTask) {
+  const results = (tasks || []).map((t) => {
     const createdAtMs = new Date(t.created_at).getTime();
     const firstResponseIso = firstResponseByTask[t.id];
     const responseMs = firstResponseIso ? new Date(firstResponseIso).getTime() - createdAtMs : null;
@@ -527,37 +486,187 @@ export async function computeMonthlyTaskStats(employeeCode, year, month, roleFil
     slowest = responded.reduce((a, b) => (a.responseMs > b.responseMs ? a : b));
   }
 
-  return {
-    employeeName: employee.name,
-    totalTickets: results.length,
-    respondedCount: responded.length,
-    unrespondedCount: unresponded.length,
-    avgMs,
-    fastest,
-    slowest,
-  };
+  return { totalTickets: results.length, respondedCount: responded.length, unrespondedCount: unresponded.length, avgMs, fastest, slowest };
 }
 
-export async function getMonthlyDigestNarrative(employeeCode, year, month) {
+// The "Hitung Sekarang" (single employee) and "Sync Semua Employee"
+// (batch) buttons both call this — just with a 1-element vs N-element
+// employeeCodes array. Either way it's a constant number of read queries
+// (4) regardless of N, because tasks/task_chats/existing-rows are all
+// fetched once for the whole batch and then split up in memory per
+// employee. Writes are still one per employee (each gets its own cached
+// row), which is unavoidable, but those only happen when a human actually
+// clicks a sync button — never on a plain page view.
+export async function computeAndSyncMonthlyStats(employeeCodes, year, month) {
   const supabase = await createClient();
-  const { data: employee } = await supabase.from("employees").select("id").eq("employee_code", employeeCode).maybeSingle();
-  if (!employee) return { narrative: null, generatedAt: null, generateCount: 0 };
+  if (!employeeCodes || employeeCodes.length === 0) return [];
+
+  const { data: employees, error: empError } = await supabase
+    .from("employees")
+    .select("id, employee_code, name")
+    .in("employee_code", employeeCodes);
+  if (empError || !employees || employees.length === 0) return [];
+
+  const employeeIds = employees.map((e) => e.id);
+  const start = new Date(Date.UTC(year, month - 1, 1)).toISOString();
+  const end = new Date(Date.UTC(month === 12 ? year + 1 : year, month === 12 ? 0 : month, 1)).toISOString();
+
+  const { data: tasksInMonth, error: taskError } = await supabase
+    .from("tasks")
+    .select("id, task_code, title, created_at, created_by, assigned_to")
+    .gte("created_at", start)
+    .lt("created_at", end)
+    .or(`assigned_to.in.(${employeeIds.join(",")}),created_by.in.(${employeeIds.join(",")})`);
+
+  if (taskError) {
+    console.error("computeAndSyncMonthlyStats (tasks):", taskError.message);
+    return [];
+  }
+
+  const taskIds = (tasksInMonth || []).map((t) => t.id);
+  const createdByTask = {};
+  (tasksInMonth || []).forEach((t) => {
+    createdByTask[t.id] = t.created_by;
+  });
+
+  const firstResponseByTask = {};
+  if (taskIds.length) {
+    const { data: chats } = await supabase
+      .from("task_chats")
+      .select("task_id, sender_id, created_at")
+      .in("task_id", taskIds)
+      .eq("is_system", false)
+      .order("created_at", { ascending: true });
+
+    (chats || []).forEach((c) => {
+      if (firstResponseByTask[c.task_id]) return;
+      if (c.sender_id && c.sender_id !== createdByTask[c.task_id]) {
+        firstResponseByTask[c.task_id] = c.created_at;
+      }
+    });
+  }
+
+  // Which employees already have a row this month, so we know update vs
+  // insert per employee without a select-per-employee.
+  const { data: existingRows } = await supabase
+    .from("task_monthly_digests")
+    .select("id, employee_id")
+    .in("employee_id", employeeIds)
+    .eq("year", year)
+    .eq("month", month);
+  const existingIdByEmployeeId = {};
+  (existingRows || []).forEach((r) => {
+    existingIdByEmployeeId[r.employee_id] = r.id;
+  });
+
+  const nowIso = new Date().toISOString();
+
+  const writes = employees.map(async (employee) => {
+    const toMeTasks = (tasksInMonth || []).filter((t) => t.assigned_to === employee.id);
+    const byMeTasks = (tasksInMonth || []).filter((t) => t.created_by === employee.id);
+    // "all" = union of the two — dedupe by task id in case an employee
+    // both created and was assigned the same task.
+    const allTasksMap = new Map();
+    [...toMeTasks, ...byMeTasks].forEach((t) => allTasksMap.set(t.id, t));
+    const allTasks = Array.from(allTasksMap.values());
+
+    const statsAll = { employeeName: employee.name, ...statsFromTasks(allTasks, firstResponseByTask) };
+    const statsToMe = { employeeName: employee.name, ...statsFromTasks(toMeTasks, firstResponseByTask) };
+    const statsByMe = { employeeName: employee.name, ...statsFromTasks(byMeTasks, firstResponseByTask) };
+
+    const row = {
+      employee_id: employee.id,
+      year,
+      month,
+      stats_all: statsAll,
+      stats_assigned_to_me: statsToMe,
+      stats_assigned_by_me: statsByMe,
+      stats_synced_at: nowIso,
+    };
+
+    const existingId = existingIdByEmployeeId[employee.id];
+    if (existingId) {
+      await supabase.from("task_monthly_digests").update(row).eq("id", existingId);
+    } else {
+      await supabase.from("task_monthly_digests").insert(row);
+    }
+
+    return {
+      employeeId: employee.employee_code,
+      employeeName: employee.name,
+      statsAll,
+      statsToMe,
+      statsByMe,
+      syncedAt: new Date(nowIso).getTime(),
+    };
+  });
+
+  return Promise.all(writes);
+}
+
+// Read-only — never computes anything, just returns whatever the last
+// sync saved (or nulls if it's never been synced this month). Used by the
+// digest page's normal load and by the AI narrative generator.
+export async function getMonthlyDigestCached(employeeCode, year, month) {
+  const supabase = await createClient();
+  const { data: employee } = await supabase.from("employees").select("id, name").eq("employee_code", employeeCode).maybeSingle();
+  if (!employee) return null;
 
   const { data } = await supabase
     .from("task_monthly_digests")
-    .select("narrative, narrative_generated_at, narrative_generate_count")
+    .select("stats_all, stats_assigned_to_me, stats_assigned_by_me, stats_synced_at, narrative, narrative_generated_at, narrative_generate_count")
     .eq("employee_id", employee.id)
     .eq("year", year)
     .eq("month", month)
     .maybeSingle();
 
-  return data
-    ? {
-        narrative: data.narrative,
-        generatedAt: data.narrative_generated_at ? new Date(data.narrative_generated_at).getTime() : null,
-        generateCount: data.narrative_generate_count || 0,
-      }
-    : { narrative: null, generatedAt: null, generateCount: 0 };
+  return {
+    employeeName: employee.name,
+    statsAll: data?.stats_all || null,
+    statsToMe: data?.stats_assigned_to_me || null,
+    statsByMe: data?.stats_assigned_by_me || null,
+    syncedAt: data?.stats_synced_at ? new Date(data.stats_synced_at).getTime() : null,
+    narrative: data?.narrative || null,
+    generatedAt: data?.narrative_generated_at ? new Date(data.narrative_generated_at).getTime() : null,
+    generateCount: data?.narrative_generate_count || 0,
+  };
+}
+
+// Same as getMonthlyDigestCached but for many employees in one go — one
+// query for the employees, one query for their cached digest rows. Used
+// by the Excel export, which used to trigger a live recompute per
+// employee; now it just reads whatever's already been synced.
+export async function getMonthlyDigestCachedBatch(employeeCodes, year, month) {
+  const supabase = await createClient();
+  if (!employeeCodes || employeeCodes.length === 0) return [];
+
+  const { data: employees } = await supabase.from("employees").select("id, employee_code, name").in("employee_code", employeeCodes);
+  if (!employees || employees.length === 0) return [];
+
+  const employeeIds = employees.map((e) => e.id);
+  const { data: rows } = await supabase
+    .from("task_monthly_digests")
+    .select("employee_id, stats_all, stats_assigned_to_me, stats_assigned_by_me, stats_synced_at, narrative")
+    .in("employee_id", employeeIds)
+    .eq("year", year)
+    .eq("month", month);
+
+  const rowByEmployeeId = {};
+  (rows || []).forEach((r) => {
+    rowByEmployeeId[r.employee_id] = r;
+  });
+
+  return employees.map((e) => {
+    const row = rowByEmployeeId[e.id];
+    return {
+      employee: { id: e.employee_code, name: e.name },
+      statsAll: row?.stats_all || null,
+      statsToMe: row?.stats_assigned_to_me || null,
+      statsByMe: row?.stats_assigned_by_me || null,
+      syncedAt: row?.stats_synced_at ? new Date(row.stats_synced_at).getTime() : null,
+      narrative: row?.narrative || null,
+    };
+  });
 }
 
 export async function saveMonthlyDigestNarrative(employeeCode, year, month, narrative) {

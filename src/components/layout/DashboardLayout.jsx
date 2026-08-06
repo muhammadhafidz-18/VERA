@@ -16,7 +16,13 @@ export default function DashboardLayout({ children, hideFloatingChat = false }) 
   useEffect(() => {
     const session = loadSession();
     if (!session || session.stage !== "dashboard") {
-      router.replace("/login");
+      // The 12h sessionStorage timer expired (or was never set). The
+      // underlying Supabase auth cookie may still be valid, so we must
+      // sign out explicitly here — otherwise middleware.js still sees a
+      // valid user, redirects /login back to /vera, and this effect
+      // immediately bounces it back to /login again (infinite 307 loop).
+      clearSession();
+      signOut().finally(() => router.replace("/login"));
       return;
     }
     setUser(session.user || null);

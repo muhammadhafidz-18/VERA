@@ -35,6 +35,9 @@ export default function TaskMonthlyDigestPage() {
   const [month, setMonth] = useState(now.getMonth() + 1); // 1-12
   const [roleFilter, setRoleFilter] = useState("all");
   const [stats, setStats] = useState(null);
+  const [syncedAt, setSyncedAt] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncingAll, setSyncingAll] = useState(false);
   const [narrative, setNarrative] = useState(null);
   const [generateCount, setGenerateCount] = useState(0);
   const [generating, setGenerating] = useState(false);
@@ -62,11 +65,69 @@ export default function TaskMonthlyDigestPage() {
       .then((r) => r.json())
       .then((d) => {
         setStats(d.stats || null);
+        setSyncedAt(d.syncedAt || null);
         setNarrative(d.narrative || null);
         setGenerateCount(d.generateCount || 0);
         setLoading(false);
       });
   }, [employeeId, year, month, roleFilter]);
+
+  // "Hitung Sekarang" — recomputes and caches this one employee's stats
+  // for the currently selected month.
+  async function handleSync() {
+    setSyncing(true);
+    setNarrativeError(null);
+    try {
+      const res = await fetch("/api/tasks/monthly-digest/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeId, year, month }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNarrativeError(data.error || "Gagal menghitung data.");
+      } else {
+        const statsByFilter = { all: data.statsAll, assigned_to_me: data.statsToMe, assigned_by_me: data.statsByMe };
+        setStats(statsByFilter[roleFilter] || null);
+        setSyncedAt(data.syncedAt || null);
+      }
+    } catch {
+      setNarrativeError("Gagal menghubungi server.");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  // "Sync Semua Employee" — same recompute, for every employee at once.
+  async function handleSyncAll() {
+    if (!employees.length) return;
+    setSyncingAll(true);
+    setNarrativeError(null);
+    try {
+      const res = await fetch("/api/tasks/monthly-digest/sync-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeIds: employees.map((e) => e.id), year, month }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNarrativeError(data.error || "Gagal sync semua employee.");
+      } else {
+        // The currently-viewed employee was included in this batch too —
+        // refresh what's on screen so it doesn't look stale.
+        const mine = (data.results || []).find((r) => r.employeeId === employeeId);
+        if (mine) {
+          const statsByFilter = { all: mine.statsAll, assigned_to_me: mine.statsToMe, assigned_by_me: mine.statsByMe };
+          setStats(statsByFilter[roleFilter] || null);
+          setSyncedAt(mine.syncedAt || null);
+        }
+      }
+    } catch {
+      setNarrativeError("Gagal menghubungi server.");
+    } finally {
+      setSyncingAll(false);
+    }
+  }
 
   function changeMonth(delta) {
     let newMonth = month + delta;
@@ -144,13 +205,16 @@ export default function TaskMonthlyDigestPage() {
     if (!employees.length) return;
     setExportingExcel(true);
     try {
-      const allResults = await Promise.all(
-        employees.map(async (emp) => {
-          const res = await fetch(`/api/tasks/monthly-digest?employeeId=${emp.id}&year=${year}&month=${month}&roleFilter=${roleFilter}`);
-          const data = await res.json();
-          return { employee: emp, stats: data.stats || null, narrative: data.narrative || null };
-        })
-      );
+      // Single batched request instead of one fetch per employee — see
+      // computeMonthlyTaskStatsBatch for why that used to be expensive
+      // once the employee list got long.
+      const res = await fetch("/api/tasks/monthly-digest/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeIds: employees.map((e) => e.id), year, month, roleFilter }),
+      });
+      const data = await res.json();
+      const allResults = data.results || [];
 
       const workbook = new ExcelJS.Workbook();
       workbook.creator = "VERA";
@@ -174,7 +238,8 @@ export default function TaskMonthlyDigestPage() {
       headerRow.height = 22;
       sheet.views = [{ state: "frozen", ySplit: 1 }];
 
-      allResults.forEach(({ employee, stats: s, narrative: n }) => {
+      allResults.forEach(({ employee, stats: s, narrative: n, syncedAt: rowSyncedAt }) => {
+        const notSynced = !rowSyncedAt;
         const fastestLabel = s?.fastest ? `${formatDuration(s.fastest.responseMs)} — ${s.fastest.title}` : "-";
         const slowestLabel = s?.slowest ? `${formatDuration(s.slowest.responseMs)} — ${s.slowest.title}` : "-";
 
@@ -182,13 +247,13 @@ export default function TaskMonthlyDigestPage() {
           employee.name,
           monthLabel,
           ROLE_FILTER_LABELS[roleFilter],
-          s?.totalTickets ?? 0,
-          s?.respondedCount ?? 0,
-          s?.unrespondedCount ?? 0,
-          s?.avgMs != null ? formatDuration(s.avgMs) : "-",
-          fastestLabel,
-          slowestLabel,
-          n || "(belum di-generate)",
+          notSynced ? "-" : s?.totalTickets ?? 0,
+          notSynced ? "-" : s?.respondedCount ?? 0,
+          notSynced ? "-" : s?.unrespondedCount ?? 0,
+          notSynced ? "-" : s?.avgMs != null ? formatDuration(s.avgMs) : "-",
+          notSynced ? "-" : fastestLabel,
+          notSynced ? "-" : slowestLabel,
+          notSynced ? "(belum di-sync)" : n || "(belum di-generate)",
         ]);
 
         row.getCell(4).font = { bold: true, color: { argb: "FF1D5FA0" } }; // Total Tiket
@@ -276,8 +341,12 @@ export default function TaskMonthlyDigestPage() {
             <Icon name="ticket" size={17} style={{ color: "var(--accent)" }} /> Digest Bulanan
           </div>
           <div className="no-print" style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-secondary" onClick={handleSyncAll} disabled={!employees.length || syncingAll}>
+              <Icon name="refresh" size={13} className={syncingAll ? "spin" : ""} />{" "}
+              {syncingAll ? `Sync ${employees.length} karyawan...` : "Sync Semua Employee"}
+            </button>
             <button className="btn btn-secondary" onClick={handleExportExcel} disabled={!employees.length || exportingExcel}>
-              <Icon name="file-text" size={13} /> {exportingExcel ? `Menyiapkan ${employees.length} karyawan...` : "Export Excel (Semua Karyawan)"}
+              <Icon name="file-text" size={13} /> {exportingExcel ? "Menyiapkan..." : "Export Excel (Semua Karyawan)"}
             </button>
             <button className="btn btn-secondary" onClick={handleExportPDF} disabled={!stats || printLoading}>
               <Icon name="file-text" size={13} /> {printLoading ? "Menyiapkan..." : "Export PDF"}
@@ -286,7 +355,8 @@ export default function TaskMonthlyDigestPage() {
         </div>
 
         <p className="task-digest-note" style={{ maxWidth: 900 }}>
-          Rata-rata waktu respon dihitung dari saat tiket dibuat sampai balasan pertama dari agent — dihitung otomatis, bukan diperkirakan AI.
+          Rata-rata waktu respon dihitung dari saat tiket dibuat sampai balasan pertama dari agent. Angka ini di-cache, bukan dihitung ulang
+          otomatis — klik "Hitung Sekarang" atau "Sync Semua Employee" untuk memperbarui.
         </p>
 
         <div className="task-digest-toolbar no-print" style={{ justifyContent: "space-between", margin: "18px 0" }}>
@@ -315,12 +385,37 @@ export default function TaskMonthlyDigestPage() {
           </div>
         </div>
 
-        {loading || !stats ? (
+        {loading ? (
           <p className="no-print" style={{ textAlign: "center", color: "var(--text3)", fontSize: 12.5, padding: "20px 0" }}>
             Memuat data...
           </p>
+        ) : !stats ? (
+          <div className="no-print" style={{ textAlign: "center", padding: "40px 0" }}>
+            <p style={{ color: "var(--text3)", fontSize: 13, marginBottom: 14 }}>
+              Data untuk <strong>{monthLabel}</strong> belum pernah dihitung.
+            </p>
+            <button className="btn btn-primary" onClick={handleSync} disabled={syncing}>
+              {syncing && <Icon name="refresh" size={11} className="spin" />} {syncing ? "Menghitung..." : "Hitung Sekarang"}
+            </button>
+            {narrativeError && <p style={{ fontSize: 11, color: "var(--red)", marginTop: 10 }}>{narrativeError}</p>}
+          </div>
         ) : (
           <div className="no-print">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 10,
+                fontSize: 11,
+                color: "var(--text3)",
+              }}
+            >
+              <span>Terakhir dihitung: {syncedAt ? new Date(syncedAt).toLocaleString("id-ID") : "-"}</span>
+              <button className="btn btn-secondary" style={{ fontSize: 11, padding: "4px 10px" }} onClick={handleSync} disabled={syncing}>
+                {syncing && <Icon name="refresh" size={11} className="spin" />} {syncing ? "Menghitung..." : "Hitung Ulang"}
+              </button>
+            </div>
             <div className="stat-grid" style={{ gridTemplateColumns: "repeat(3, 1fr) 1.3fr" }}>
               <div className="stat-card blue">
                 <div className="stat-label">Total Tiket</div>
