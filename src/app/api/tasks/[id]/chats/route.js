@@ -9,11 +9,23 @@ export async function POST(request, { params }) {
 
   let finalMessage = (message || "").trim();
   let moderated = false;
+
   if (finalMessage) {
     try {
       const cleaned = await callClaude(TASK_SYSTEM_PROMPT_MODERATION, finalMessage);
-      if (cleaned && cleaned.trim() && cleaned.trim() !== finalMessage) {
-        finalMessage = cleaned.trim();
+      const trimmedCleaned = cleaned ? cleaned.trim() : "";
+
+      if (trimmedCleaned === "[[BLOCKED]]") {
+        // Heavily abusive message — don't save it, don't send it to the
+        // recipient. Nothing gets written to task_chats for this attempt.
+        return NextResponse.json(
+          { success: false, blocked: true, error: "Pesan mengandung terlalu banyak kata kasar dan diblokir. Silakan tulis ulang dengan bahasa yang lebih sopan." },
+          { status: 422 }
+        );
+      }
+
+      if (trimmedCleaned && trimmedCleaned !== finalMessage) {
+        finalMessage = trimmedCleaned;
         moderated = true;
       }
     } catch (err) {

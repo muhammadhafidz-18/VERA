@@ -29,6 +29,13 @@ async function moderateText(text) {
   return res.json();
 }
 
+// Hidden per Thom's request — auto-moderation on blur now handles the
+// rude-language case, and the manual "Refine with AI" button (grammar /
+// formal-tone polish) wasn't getting used in practice. Flip this back to
+// true to bring the button back; handleRefineDescription, refineText,
+// and /api/ai/refine are all left intact.
+const SHOW_REFINE_DESCRIPTION_BUTTON = false;
+
 export default function TaskDetailView({ task, onBack, onUpdateTask, onEditTask, onChangeStatus, onSendChat, onDeleteTask, employees, currentUserId }) {
   const [description, setDescription] = useState(task.description);
   const [refiningDesc, setRefiningDesc] = useState(false);
@@ -36,6 +43,7 @@ export default function TaskDetailView({ task, onBack, onUpdateTask, onEditTask,
   const [descRefinePreview, setDescRefinePreview] = useState(null);
   const [moderatingDesc, setModeratingDesc] = useState(false);
   const [descModerationNotice, setDescModerationNotice] = useState(false);
+  const [descBlockedNotice, setDescBlockedNotice] = useState(false);
 
   const [summarizing, setSummarizing] = useState(false);
   const [refiningSummary, setRefiningSummary] = useState(false);
@@ -57,6 +65,7 @@ export default function TaskDetailView({ task, onBack, onUpdateTask, onEditTask,
   const [showActivityLog, setShowActivityLog] = useState(false);
   const [sendingChat, setSendingChat] = useState(false);
   const [chatModerationNotice, setChatModerationNotice] = useState(false);
+  const [chatBlockedNotice, setChatBlockedNotice] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const chatEndRef = useRef(null);
@@ -85,8 +94,16 @@ export default function TaskDetailView({ task, onBack, onUpdateTask, onEditTask,
   async function handleDescriptionBlur() {
     if (!description.trim()) return;
     setModeratingDesc(true);
-    const { cleaned, changed } = await moderateText(description);
+    const { cleaned, changed, blocked } = await moderateText(description);
     setModeratingDesc(false);
+    if (blocked) {
+      // Too much profanity to salvage — revert to whatever was last saved
+      // instead of persisting the abusive text.
+      setDescription(task.description);
+      setDescBlockedNotice(true);
+      setTimeout(() => setDescBlockedNotice(false), 4000);
+      return;
+    }
     if (changed) {
       saveDescription(cleaned);
       setDescModerationNotice(true);
@@ -190,7 +207,13 @@ export default function TaskDetailView({ task, onBack, onUpdateTask, onEditTask,
     setChatInput("");
     setSendingChat(true);
     const result = await onSendChat(rawMessage, pendingAttachment);
-    if (result?.moderated) {
+    if (result?.blocked) {
+      // Not sent at all — give the text back so the user can edit and
+      // retry instead of losing what they typed.
+      setChatInput(rawMessage);
+      setChatBlockedNotice(result.error || "Pesan diblokir karena terlalu banyak kata kasar.");
+      setTimeout(() => setChatBlockedNotice(null), 5000);
+    } else if (result?.moderated) {
       setChatModerationNotice(true);
       setTimeout(() => setChatModerationNotice(false), 4000);
     }
@@ -257,14 +280,21 @@ export default function TaskDetailView({ task, onBack, onUpdateTask, onEditTask,
           </label>
           <textarea className="input" rows={6} value={description} onChange={(e) => saveDescription(e.target.value)} onBlur={handleDescriptionBlur} />
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
-            <button className="task-ai-link" disabled={refiningDesc || !description.trim()} onClick={handleRefineDescription}>
-              {refiningDesc ? <Icon name="refresh" size={12} className="spin" /> : <Icon name="sparkles" size={12} />}
-              {refiningDesc ? "Refining..." : "Refine with AI"}
-            </button>
+            {SHOW_REFINE_DESCRIPTION_BUTTON && (
+              <button className="task-ai-link" disabled={refiningDesc || !description.trim()} onClick={handleRefineDescription}>
+                {refiningDesc ? <Icon name="refresh" size={12} className="spin" /> : <Icon name="sparkles" size={12} />}
+                {refiningDesc ? "Refining..." : "Refine with AI"}
+              </button>
+            )}
             {moderatingDesc && <span style={{ fontSize: 11, color: "var(--text3)" }}>Checking tone...</span>}
             {descModerationNotice && (
               <span style={{ fontSize: 11, color: "var(--purple)" }}>
                 <Icon name="sparkles" size={10} /> Adjusted automatically for tone
+              </span>
+            )}
+            {descBlockedNotice && (
+              <span style={{ fontSize: 11, color: "var(--red)" }}>
+                <Icon name="alert-triangle" size={10} /> Terlalu banyak kata kasar — deskripsi dikembalikan ke versi terakhir
               </span>
             )}
             {descError && <span style={{ fontSize: 11, color: "var(--red)" }}>{descError}</span>}
@@ -406,6 +436,12 @@ export default function TaskDetailView({ task, onBack, onUpdateTask, onEditTask,
           {chatModerationNotice && (
             <div style={{ fontSize: 11, color: "var(--purple)", display: "flex", alignItems: "center", gap: 4, marginTop: 8 }}>
               <Icon name="sparkles" size={10} /> Your last message was adjusted automatically for tone
+            </div>
+          )}
+
+          {chatBlockedNotice && (
+            <div style={{ fontSize: 11, color: "var(--red)", display: "flex", alignItems: "center", gap: 4, marginTop: 8 }}>
+              <Icon name="alert-triangle" size={10} /> {chatBlockedNotice}
             </div>
           )}
 
