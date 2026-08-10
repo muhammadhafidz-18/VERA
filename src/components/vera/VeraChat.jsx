@@ -1,6 +1,6 @@
 // src/components/vera/VeraChat.jsx
 "use client";
-import { useState, useRef, useEffect, useMemo, memo, forwardRef, useImperativeHandle } from "react";
+import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
 import Icon from "@/lib/Icon";
 import { speak, warmUpVoices } from "@/lib/voice";
 import { clearSession, loadSession } from "@/lib/session";
@@ -20,76 +20,6 @@ import {
 
 const MAX_ATTACHMENT_MB = 5;
 const SPREADSHEET_EXTENSIONS = [".xlsx", ".xls", ".csv"];
-// How many recent messages get sent to Claude per turn. The UI still shows
-// the FULL conversation — this only caps what's sent over the network. Past
-// a certain point, sending the entire history every turn means the request
-// payload (and the model's processing time + token cost) grows without
-// bound as a session goes on, which is part of why long conversations felt
-// slower to respond to, not just slower to render. 30 messages is roughly
-// 15 back-and-forth turns, enough for VERA to stay coherent about what's
-// being discussed without dragging the whole session along forever.
-const MAX_HISTORY_MESSAGES = 30;
-
-// Extracted + memoized so typing in the input (which re-renders VeraChat on
-// every keystroke via setInput) doesn't force this whole list — potentially
-// dozens of bubbles — to re-render too. React.memo bails out here as long as
-// `messages` and `thinking` haven't actually changed, regardless of how
-// often the parent re-renders. Owns its own scroll-to-bottom behavior since
-// it already has everything it needs (messages, thinking) to know when to
-// scroll — the parent no longer has to coordinate that.
-// Each bubble is its own memoized component (not just the list as a whole).
-// `messages` only ever grows via [...prev, newMsg] — existing message
-// objects keep the same reference, only the array wrapper is new. So
-// React.memo here bails out for every OLD bubble when a new one is
-// appended, and only the new bubble actually renders. Without this, adding
-// message #51 to a 50-message conversation would still re-render all 51
-// bubbles from scratch — this is what made long conversations feel heavier
-// over time even after MessageList itself was memoized.
-const MessageBubble = memo(function MessageBubble({ m }) {
-  return (
-    <div className={`bubble-row ${m.role}`}>
-      {m.role === "assistant" && <div className="avatar-vera">V</div>}
-      <div className={`bubble ${m.role}`}>
-        {m.fileName && (
-          <div className="chat-file-chip">
-            <Icon name="paperclip" size={12} /> {m.fileName}
-          </div>
-        )}
-        <div>{m.text}</div>
-        {m.opType && <span className={`op-badge ${m.opType.toLowerCase()}`}>{m.opType}</span>}
-        {m.downloadUrl && (
-          <a href={m.downloadUrl} download className="chat-download-btn">
-            <Icon name="file-text" size={14} /> Download Excel
-          </a>
-        )}
-      </div>
-    </div>
-  );
-});
-
-const MessageList = memo(function MessageList({ messages, thinking }) {
-  const scrollRef = useRef(null);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, thinking]);
-
-  return (
-    <div ref={scrollRef} className="chat-scroll">
-      {messages.map((m, i) => (
-        <MessageBubble key={i} m={m} />
-      ))}
-      {thinking && (
-        <div className="bubble-row assistant">
-          <div className="avatar-vera">V</div>
-          <div className="bubble assistant" style={{ opacity: 0.7 }}>
-            V.E.R.A is thinking...
-          </div>
-        </div>
-      )}
-    </div>
-  );
-});
 
 const VeraChat = forwardRef(function VeraChat({ onLogout, compact = false, hideHeader = false }, ref) {
   const greeting = getVeraGreeting(loadSession()?.user?.name);
@@ -100,6 +30,7 @@ const VeraChat = forwardRef(function VeraChat({ onLogout, compact = false, hideH
   const [attachError, setAttachError] = useState("");
   const fileInputRef = useRef(null);
   const [thinking, setThinking] = useState(false);
+  const scrollRef = useRef(null);
   const recognitionRef = useRef(null);
   const transcriptPartsRef = useRef([]);
 
@@ -122,6 +53,10 @@ const VeraChat = forwardRef(function VeraChat({ onLogout, compact = false, hideH
       sessionStorage.setItem(VERA_CHAT_HISTORY_KEY, JSON.stringify(messages));
     } catch (err) {}
   }, [messages]);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, thinking]);
 
   const handleResetChat = () => {
     const fresh = [{ role: "assistant", text: greeting }];
@@ -219,7 +154,7 @@ const VeraChat = forwardRef(function VeraChat({ onLogout, compact = false, hideH
     const attachmentToSend = attachedFile;
     setAttachedFile(null);
 
-    const history = nextMessages.slice(-MAX_HISTORY_MESSAGES).map((m) => ({
+    const history = nextMessages.map((m) => ({
       role: m.role === "assistant" ? "assistant" : "user",
       // Keep history lightweight — only the current turn sends the actual
       // file bytes (see `attachment` below); past turns just note a file
@@ -369,7 +304,35 @@ const VeraChat = forwardRef(function VeraChat({ onLogout, compact = false, hideH
       )}
 
       <div className="vera-chat-card">
-        <MessageList messages={messages} thinking={thinking} />
+        <div ref={scrollRef} className="chat-scroll">
+          {messages.map((m, i) => (
+            <div key={i} className={`bubble-row ${m.role}`}>
+              {m.role === "assistant" && <div className="avatar-vera">V</div>}
+              <div className={`bubble ${m.role}`}>
+                {m.fileName && (
+                  <div className="chat-file-chip">
+                    <Icon name="paperclip" size={12} /> {m.fileName}
+                  </div>
+                )}
+                <div>{m.text}</div>
+                {m.opType && <span className={`op-badge ${m.opType.toLowerCase()}`}>{m.opType}</span>}
+                {m.downloadUrl && (
+                  <a href={m.downloadUrl} download className="chat-download-btn">
+                    <Icon name="file-text" size={14} /> Download Excel
+                  </a>
+                )}
+              </div>
+            </div>
+          ))}
+          {thinking && (
+            <div className="bubble-row assistant">
+              <div className="avatar-vera">V</div>
+              <div className="bubble assistant" style={{ opacity: 0.7 }}>
+                V.E.R.A is thinking...
+              </div>
+            </div>
+          )}
+        </div>
         {attachedFile && (
           <div className="chat-attach-preview">
             <Icon name={attachedFile.kind === "image" ? "sparkles" : "file-text"} size={13} />
