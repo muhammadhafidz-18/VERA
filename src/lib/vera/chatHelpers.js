@@ -48,8 +48,8 @@ export const VERA_RESET_CONFIRM_QUESTION_PATTERN = /(yakin.*(reset|menghapus riw
 export const VERA_AFFIRMATIVE_PATTERN = /^(ya|iya|yes|yep|yup|betul|benar|setuju|lanjutkan|oke|ok|correct|confirm(ed)?)[!.,\s]*$/i;
 
 export const COMMAND_SUGGESTIONS = [
-  { icon: "microphone", kind: "Ask VERA", text: "Schedule a sync with the dev team for tomorrow." },
-  { icon: "calendar", kind: "Command", text: "Create a meeting invite for my 1-on-1." },
-  { icon: "ticket", kind: "Command", text: "Create a task for a broken laptop to IT." },
-  { icon: "address-book", kind: "Ask VERA", text: "Who is in the Finance division?" },
+  { icon: "microphone", kind: "Ask VERA", text: "Buatkan meeting sync besok jam 2 siang sama tim Technical Support." },
+  { icon: "calendar", kind: "Command", text: "Update MTG-05 jamnya jadi jam 3 sore." },
+  { icon: "ticket", kind: "Command", text: "Buatkan task untuk laptop rusak, assign ke Technical Support." },
+  { icon: "address-book", kind: "Ask VERA", text: "Siapa aja yang ada di divisi Technical Support?" },
 ];
