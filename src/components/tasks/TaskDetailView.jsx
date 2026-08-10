@@ -29,6 +29,31 @@ async function moderateText(text) {
   return res.json();
 }
 
+// Last-line defense against duplicate chat ids in `task.chats` (can happen
+// from a race between the 4-second background poll on the Tasks page and
+// an optimistic append right after sending a message — whichever lands
+// second can end up re-adding a message that's already in the array).
+// Filtering here means the chat list never crashes/warns on a duplicate
+// React key regardless of what upstream cause produced it. This doesn't
+// fix the root cause (that's handled where `chats` gets updated, in
+// page.js's handleSendChat), it just makes rendering robust to it no
+// matter where a duplicate slips in from.
+function dedupeChatsById(chats) {
+  const seen = new Set();
+  return chats.filter((c) => {
+    if (seen.has(c.id)) return false;
+    seen.add(c.id);
+    return true;
+  });
+}
+
+// Hidden per Thom's request — AI Summary now covers this role too (recap +
+// analytical breakdown, see the merged TASK_SYSTEM_PROMPT_SUMMARY). Kept as
+// a flag rather than deleted so it's a one-line flip to bring back if the
+// two features need to be split apart again later; the button handler,
+// API route, and state are all left fully intact.
+const SHOW_ISSUE_ANALYSIS_CARD = false;
+
 // Hidden per Thom's request — auto-moderation on blur now handles the
 // rude-language case, and the manual "Refine with AI" button (grammar /
 // formal-tone polish) wasn't getting used in practice. Flip this back to
@@ -85,6 +110,7 @@ export default function TaskDetailView({ task, onBack, onUpdateTask, onEditTask,
   const isOverdue = task.dueDate && task.dueDate < Date.now() && task.status !== "done" && task.status !== "cancelled";
   const summaryCount = task.aiSummaryGenerateCount || 0;
   const issueCount = task.aiIssueAnalysisGenerateCount || 0;
+  const dedupedChats = dedupeChatsById(task.chats);
 
   function saveDescription(next) {
     setDescription(next);
@@ -319,11 +345,14 @@ export default function TaskDetailView({ task, onBack, onUpdateTask, onEditTask,
               })}
             </div>
           )}
-        </div>
 
-        {/* RIGHT: Chat + AI */}
-        <div className="task-panel task-chat-panel">
-          <div className="task-ai-card purple">
+          {/* Moved here from the right (chat) panel — that panel has a fixed
+              height (see .task-chat-panel), so a long AI Summary was eating
+              into the space reserved for chat no matter how much internal
+              scroll it got. Living in the left column instead, it can grow
+              as long as it needs to and just scrolls with the normal page,
+              while the right panel stays dedicated to chat. */}
+          <div className="task-ai-card purple" style={{ marginTop: 14 }}>
             <div className="task-ai-card-head">
               <span className="task-ai-card-title purple">
                 <Icon name="sparkles" size={12} /> AI Summary
@@ -347,42 +376,47 @@ export default function TaskDetailView({ task, onBack, onUpdateTask, onEditTask,
                 <p className="task-ai-card-meta">Generated {taskTimeAgo(task.aiSummaryGeneratedAt)} — AI-generated, still needs review</p>
               </>
             ) : (
-              <p className="task-ai-card-placeholder">No summary yet. Click &quot;Generate&quot; to summarize the chat below.</p>
+              <p className="task-ai-card-placeholder">No summary yet. Click &quot;Generate&quot; to get a recap and analysis of the chat below.</p>
             )}
             {summaryError && <p style={{ fontSize: 11, color: "var(--red)", marginTop: 4 }}>{summaryError}</p>}
           </div>
+        </div>
 
-          <div className="task-ai-card blue">
-            <div className="task-ai-card-head">
-              <span className="task-ai-card-title blue">
-                <Icon name="alert-triangle" size={12} /> Issue Analysis (AI)
-              </span>
-              <div className="task-ai-card-actions">
-                {issueHistory.length > 0 && <button onClick={() => setShowIssueHistory(true)}>History</button>}
-                {task.aiIssueAnalysis && (
-                  <button disabled={refiningIssueAnalysis} onClick={handleRefineIssueAnalysis}>
-                    {refiningIssueAnalysis ? "Refining..." : "Refine"}
+        {/* RIGHT: Chat + AI */}
+        <div className="task-panel task-chat-panel">
+          {SHOW_ISSUE_ANALYSIS_CARD && (
+            <div className="task-ai-card blue">
+              <div className="task-ai-card-head">
+                <span className="task-ai-card-title blue">
+                  <Icon name="alert-triangle" size={12} /> Issue Analysis (AI)
+                </span>
+                <div className="task-ai-card-actions">
+                  {issueHistory.length > 0 && <button onClick={() => setShowIssueHistory(true)}>History</button>}
+                  {task.aiIssueAnalysis && (
+                    <button disabled={refiningIssueAnalysis} onClick={handleRefineIssueAnalysis}>
+                      {refiningIssueAnalysis ? "Refining..." : "Refine"}
+                    </button>
+                  )}
+                  <button disabled={analyzingIssues || issueCount >= 2} onClick={handleGenerateIssueAnalysis}>
+                    {analyzingIssues && <Icon name="refresh" size={11} className="spin" />}
+                    {issueCount >= 2 ? "Limit reached (2/2)" : task.aiIssueAnalysis ? `Regenerate (${issueCount}/2)` : `Generate (${issueCount}/2)`}
                   </button>
-                )}
-                <button disabled={analyzingIssues || issueCount >= 2} onClick={handleGenerateIssueAnalysis}>
-                  {analyzingIssues && <Icon name="refresh" size={11} className="spin" />}
-                  {issueCount >= 2 ? "Limit reached (2/2)" : task.aiIssueAnalysis ? `Regenerate (${issueCount}/2)` : `Generate (${issueCount}/2)`}
-                </button>
+                </div>
               </div>
+              {task.aiIssueAnalysis ? (
+                <>
+                  <p className="task-ai-card-body">{task.aiIssueAnalysis}</p>
+                  <p className="task-ai-card-meta">Generated {taskTimeAgo(task.aiIssueAnalysisGeneratedAt)} — AI-generated, still needs review</p>
+                </>
+              ) : (
+                <p className="task-ai-card-placeholder">Summarize all issues from the description &amp; chat, with status and urgency.</p>
+              )}
+              {issueAnalysisError && <p style={{ fontSize: 11, color: "var(--red)", marginTop: 4 }}>{issueAnalysisError}</p>}
             </div>
-            {task.aiIssueAnalysis ? (
-              <>
-                <p className="task-ai-card-body">{task.aiIssueAnalysis}</p>
-                <p className="task-ai-card-meta">Generated {taskTimeAgo(task.aiIssueAnalysisGeneratedAt)} — AI-generated, still needs review</p>
-              </>
-            ) : (
-              <p className="task-ai-card-placeholder">Summarize all issues from the description &amp; chat, with status and urgency.</p>
-            )}
-            {issueAnalysisError && <p style={{ fontSize: 11, color: "var(--red)", marginTop: 4 }}>{issueAnalysisError}</p>}
-          </div>
+          )}
 
           <div className="task-chat-scroll">
-            {task.chats.map((chat) => {
+            {dedupedChats.map((chat) => {
               if (chat.isSystem) {
                 return (
                   <div key={chat.id} className="task-chat-system">

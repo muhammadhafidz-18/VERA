@@ -50,7 +50,9 @@ export default function MeetingDayListModal({ date, meetings, currentUserId, onC
                       {m.title}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text3)", marginTop: 2 }}>
-                      {m.location && <span>{m.location} · </span>}
+                      <span style={{ fontFamily: "monospace", color: "var(--accent)", fontWeight: 600 }}>{m.id}</span>
+                      {m.location && <span> · {m.location}</span>}
+                      {" · "}
                       {m.createdByName ? `by ${m.createdByName}` : "creator unknown"}
                     </div>
                   </div>

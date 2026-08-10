@@ -188,6 +188,7 @@ export default function TaskIndex({ tasks, onOpenTask, onDeleteTask, employees }
                 return (
                   <tr key={t.id} onClick={() => onOpenTask(t.id)} style={{ cursor: "pointer" }}>
                     <td data-label="Task">
+                      <div style={{ fontFamily: "monospace", fontSize: 11, color: "var(--accent)", fontWeight: 600, marginBottom: 2 }}>{t.id}</div>
                       <div style={{ fontWeight: 500 }}>{t.title}</div>
                       <div style={{ color: "var(--text3)", fontSize: 11.5, maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.description}</div>
                     </td>

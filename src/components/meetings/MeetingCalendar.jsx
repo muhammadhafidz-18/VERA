@@ -181,9 +181,9 @@ function MonthView({ anchor, eventsByDate, todayIso, onDayClick }) {
                       key={m.id}
                       className="cal-event"
                       style={{ background: `color-mix(in srgb, ${col} 15%, var(--bg2))`, borderLeft: `3px solid ${col}` }}
-                      title={`${m.title} — ${m.startTime}–${m.endTime} — ${m.location || "-"}`}
+                      title={`${m.id} — ${m.title} — ${m.startTime}–${m.endTime} — ${m.location || "-"}`}
                     >
-                      {m.title}
+                      <span style={{ fontFamily: "monospace", fontWeight: 700, opacity: 0.85 }}>{m.id}</span> {m.title}
                     </div>
                   );
                 })}
@@ -259,13 +259,15 @@ function GridView({ days, eventsByDate, todayIso, onDayClick, onEventClick }) {
                     key={m.id}
                     className="cal-gridview-event"
                     style={{ top, height, background: `color-mix(in srgb, ${col} 22%, var(--bg2))`, borderLeft: `3px solid ${col}` }}
-                    title={`${m.title} — ${m.startTime}–${m.endTime} — ${m.location || "-"}`}
+                    title={`${m.id} — ${m.title} — ${m.startTime}–${m.endTime} — ${m.location || "-"}`}
                     onClick={(e) => {
                       e.stopPropagation();
                       onEventClick(m);
                     }}
                   >
-                    <div className="cal-gridview-event-title">{m.title}</div>
+                    <div className="cal-gridview-event-title">
+                      <span style={{ fontFamily: "monospace", fontWeight: 700, opacity: 0.8 }}>{m.id}</span> {m.title}
+                    </div>
                     <div className="cal-gridview-event-time">
                       {m.startTime}–{m.endTime}
                     </div>

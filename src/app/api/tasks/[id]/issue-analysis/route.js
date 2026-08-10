@@ -33,7 +33,7 @@ export async function POST(request, { params }) {
   }
 
   const transcript = realChats.map((c) => `${c.senderName || "Unknown"}: ${c.message}`).join("\n");
-  const contextText = `Task: "${task.title}"\n\nDescription:\n${task.description}\n\nChat history:\n${transcript}`;
+  const contextText = `Task: "${task.title}"\nPriority: ${task.priority}\n\nDescription:\n${task.description}\n\nChat history:\n${transcript}`;
 
   try {
     const analysis = await callClaude(TASK_SYSTEM_PROMPT_ISSUE_ANALYSIS, contextText);

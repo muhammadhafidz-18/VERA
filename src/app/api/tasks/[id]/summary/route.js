@@ -16,17 +16,23 @@ export async function POST(request, { params }) {
   if ((task.aiSummaryGenerateCount || 0) >= 2) {
     return NextResponse.json({ error: "You've reached the 2x generate limit for this feature." }, { status: 429 });
   }
-  if (task.chats.length === 0) {
+
+  const realChats = task.chats.filter((c) => !c.isSystem);
+  // Only block on a fully empty chat — below that, this feature now also
+  // covers the old Issue Analysis role (recap + analytical breakdown), so
+  // it should still run on a thin conversation and just produce a lighter
+  // "Rekap Percakapan"/"Analisis" rather than refusing outright.
+  if (realChats.length === 0) {
     return NextResponse.json({ error: "No chat to summarize yet." }, { status: 400 });
   }
 
-  const transcript = task.chats
-    .filter((c) => !c.isSystem)
-    .map((c) => `${c.senderName || "Unknown"}: ${c.message}`)
-    .join("\n");
+  const transcript = realChats.map((c) => `${c.senderName || "Unknown"}: ${c.message}`).join("\n");
 
   try {
-    const summary = await callClaude(TASK_SYSTEM_PROMPT_SUMMARY, `Chat history for task "${task.title}":\n\n${transcript}`);
+    const summary = await callClaude(
+      TASK_SYSTEM_PROMPT_SUMMARY,
+      `Task: "${task.title}"\nPriority: ${task.priority}\n\nChat history:\n${transcript}`
+    );
     const previousSummary = task.aiSummary ? { content: task.aiSummary, createdAt: task.aiSummaryGeneratedAt } : null;
     const result = await updateTask(id, {
       aiSummary: summary,
