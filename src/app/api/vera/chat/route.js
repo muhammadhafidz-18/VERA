@@ -70,6 +70,28 @@ const MASTER_LIST_HEADER_MAP = {
   "name": "name",
 };
 
+// ---------- Prompt caching ----------
+// VERA_TOOLS never changes at runtime (it's a static import), so this only
+// needs to run once at module load — not per request.
+//
+// Marking the LAST tool with cache_control tells Anthropic "everything up
+// to and including this block is a stable prefix, cache it." On the next
+// call with an identical tools array, those tokens are served from cache
+// instead of reprocessed — cache reads are far cheaper and faster than a
+// full reprocess. This matters a lot here specifically because a single
+// user message can trigger up to MAX_TURNS (8) round-trips to Claude in the
+// tool-calling loop below, and every one of those round-trips was sending
+// this same ~15-tool schema from scratch. The system prompt is cached the
+// same way per-request in callAnthropic(), since it's rebuilt each call
+// (it embeds today's date/divisions/branches) but stays byte-identical
+// across every turn WITHIN that same request and across turns in the same
+// chat session, until something like the date rolls over.
+function withCacheControl(tools) {
+  if (!tools.length) return tools;
+  return [...tools.slice(0, -1), { ...tools[tools.length - 1], cache_control: { type: "ephemeral" } }];
+}
+const VERA_TOOLS_CACHED = withCacheControl(VERA_TOOLS);
+
 // Asks Claude to phrase the (already-finished, already-in-database) import
 // result in natural language. Claude is only given the exact result JSON
 // and explicitly told not to invent numbers — this call has no tools
@@ -183,7 +205,16 @@ async function handleSpreadsheetImport(attachment, lastUserText) {
 }
 
 async function callAnthropic(messages, systemPrompt, toolChoice) {
-  const body = { model: MODEL, max_tokens: 1024, system: systemPrompt, tools: VERA_TOOLS, messages };
+  const body = {
+    model: MODEL,
+    max_tokens: 1024,
+    // Wrapped as a content-block array (instead of a plain string) so it can
+    // carry its own cache_control breakpoint — see VERA_TOOLS_CACHED comment
+    // above for why this matters here specifically.
+    system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+    tools: VERA_TOOLS_CACHED,
+    messages,
+  };
   if (toolChoice) body.tool_choice = toolChoice;
 
   const res = await fetch(ANTHROPIC_URL, {
@@ -287,6 +318,22 @@ export async function POST(request) {
     let resetRequested = false;
     let dbOperationType = null;
     let downloadUrl = null;
+    // The `lastUserLooksLikeDataSubmission` nudge below is meant to catch
+    // Claude replying with plain text ("Sure, I'll add that!") instead of
+    // actually calling create_employee when the user's message already
+    // looks like a full record (has an email + a field-name keyword). But
+    // that same regex also matches messages that are only PARTIALLY
+    // complete — e.g. "buatkan employee salsa email salsa@gmail.com branch
+    // jakarta" has an email and the word "branch", but is missing Division.
+    // The correct response there is a genuine clarifying question ("Divisi
+    // apa ya?"), which is also just plain text — so without this flag, the
+    // nudge would keep firing on every subsequent turn (since it's checked
+    // against the ORIGINAL user message, not the live conversation) and
+    // force a tool call every time, burning through MAX_TURNS with no way
+    // for Claude to ever just ask what's missing. Firing the nudge once is
+    // enough to catch a genuine dodge; if Claude still answers with text
+    // after that, it's far more likely asking a legitimate question.
+    let unverifiedSubmissionNudgeSent = false;
 
     for (let turn = 0; turn < MAX_TURNS; turn++) {
       const toolChoice = forceToolChoice ? { type: "any" } : undefined;
@@ -320,7 +367,7 @@ export async function POST(request) {
         const looksLikeMeta = VERA_META_PATTERN.test(text);
         const looksLikeFalseSuccess = VERA_SUCCESS_CLAIM_PATTERN.test(text);
         const looksLikeDodgedConfirmation = lastUserWasConfirmation && !logoutRequested && !resetRequested;
-        const looksLikeUnverifiedSubmission = lastUserLooksLikeDataSubmission;
+        const looksLikeUnverifiedSubmission = lastUserLooksLikeDataSubmission && !unverifiedSubmissionNudgeSent;
         const isBad =
           looksLikePlaceholder ||
           looksLikeRawData ||
@@ -330,6 +377,7 @@ export async function POST(request) {
           looksLikeUnverifiedSubmission;
 
         if (isBad && turn < MAX_TURNS - 1) {
+          if (looksLikeUnverifiedSubmission) unverifiedSubmissionNudgeSent = true;
           const nudge = looksLikeUnverifiedSubmission
             ? "The user just gave you structured details (name/email/division/branch) to create a record, but no create tool has actually succeeded yet. Call the appropriate create tool right now with those exact details."
             : looksLikeDodgedConfirmation
