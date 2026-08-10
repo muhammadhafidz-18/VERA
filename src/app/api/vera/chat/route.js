@@ -70,6 +70,28 @@ const MASTER_LIST_HEADER_MAP = {
   "name": "name",
 };
 
+// ---------- Prompt caching ----------
+// VERA_TOOLS never changes at runtime (it's a static import), so this only
+// needs to run once at module load — not per request.
+//
+// Marking the LAST tool with cache_control tells Anthropic "everything up
+// to and including this block is a stable prefix, cache it." On the next
+// call with an identical tools array, those tokens are served from cache
+// instead of reprocessed — cache reads are far cheaper and faster than a
+// full reprocess. This matters a lot here specifically because a single
+// user message can trigger up to MAX_TURNS (8) round-trips to Claude in the
+// tool-calling loop below, and every one of those round-trips was sending
+// this same ~15-tool schema from scratch. The system prompt is cached the
+// same way per-request in callAnthropic(), since it's rebuilt each call
+// (it embeds today's date/divisions/branches) but stays byte-identical
+// across every turn WITHIN that same request and across turns in the same
+// chat session, until something like the date rolls over.
+function withCacheControl(tools) {
+  if (!tools.length) return tools;
+  return [...tools.slice(0, -1), { ...tools[tools.length - 1], cache_control: { type: "ephemeral" } }];
+}
+const VERA_TOOLS_CACHED = withCacheControl(VERA_TOOLS);
+
 // Asks Claude to phrase the (already-finished, already-in-database) import
 // result in natural language. Claude is only given the exact result JSON
 // and explicitly told not to invent numbers — this call has no tools
@@ -183,7 +205,16 @@ async function handleSpreadsheetImport(attachment, lastUserText) {
 }
 
 async function callAnthropic(messages, systemPrompt, toolChoice) {
-  const body = { model: MODEL, max_tokens: 1024, system: systemPrompt, tools: VERA_TOOLS, messages };
+  const body = {
+    model: MODEL,
+    max_tokens: 1024,
+    // Wrapped as a content-block array (instead of a plain string) so it can
+    // carry its own cache_control breakpoint — see VERA_TOOLS_CACHED comment
+    // above for why this matters here specifically.
+    system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
+    tools: VERA_TOOLS_CACHED,
+    messages,
+  };
   if (toolChoice) body.tool_choice = toolChoice;
 
   const res = await fetch(ANTHROPIC_URL, {
